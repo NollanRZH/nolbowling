@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>NolBowling</title>
+<title>NolBowling — Synthwave Arcade</title>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
@@ -47,6 +47,9 @@
 <div id="wrap">
   <canvas id="c"></canvas>
   <div id="crt"></div>
+  <!-- Champ de saisie flottant pour le pseudo du joueur en ligne -->
+  <input id="nickInput" type="text" maxlength="8" placeholder="PSEUDO" autocomplete="off" spellcheck="false"
+    style="display:none;position:absolute;top:27.5%;left:50%;transform:translate(-50%,-50%);width:220px;height:40px;background:#0b0428;border:2px solid #ff00ff;border-radius:8px;color:#00ffff;font-family:'Press Start 2P',monospace;font-size:14px;text-align:center;text-transform:uppercase;outline:none;box-shadow:0 0 18px #ff00ff66;z-index:20;">
   <!-- Champ de saisie flottant pour le code du salon P2P -->
   <input id="roomInput" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"
     style="display:none;position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);width:170px;height:44px;background:#0b0428;border:2px solid #00ffff;border-radius:8px;color:#ffff00;font-family:'Press Start 2P',monospace;font-size:18px;text-align:center;text-transform:uppercase;outline:none;box-shadow:0 0 20px #00ffff66;z-index:20;">
@@ -56,7 +59,7 @@
   'use strict';
 
   /* ==========================================================================
-     1. CONFIGURATION & ÉTAT GLOBAL
+     1. CONFIGURATION & ETAT GLOBAL
      ========================================================================== */
   const cv = document.getElementById('c');
   const g = cv.getContext('2d');
@@ -79,9 +82,9 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   const MODES = [
-    { n: 'INFINI', f: 0, d: 'SANS FIN • OBSTACLES • RECORD' },
+    { n: 'INFINI', f: 0, d: 'SANS FIN - OBSTACLES - RECORD' },
     { n: '5 FRAMES', f: 5, d: 'PARTIE RAPIDE EN 5 FRAMES' },
-    { n: '10 FRAMES', f: 10, d: 'RÈGLES OFFICIELLES • 10 FRAMES' }
+    { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES - 10 FRAMES' }
   ];
 
   const SKINS = [
@@ -98,7 +101,8 @@
     spares: 0,
     maxStreak: 0,
     games: 0,
-    skin: 0
+    skin: 0,
+    nick: ''
   };
   try {
     const saved = JSON.parse(localStorage.getItem('nb_stats_v2') || 'null');
@@ -121,16 +125,16 @@
     ph: Math.random() * 6.28
   }));
 
-  // Variables d'état du jeu
+  // Variables d'etat du jeu
   let st = 'menu'; // 'menu' | 'stats' | 'online' | 'aim' | 'roll' | 'between' | 'pass' | 'over'
   let tk = 0;
   let mode = 0, np = 1, mrow = 0;
   let playType = 'solo'; // 'solo' | 'bot' | 'local' | 'online'
   let botDiff = 1; // 0: ROOKIE, 1: PRO, 2: CYBER-PRO
   const BOT_LEVELS = [
-    { n: 'ROOKIE', desc: 'IA DÉBUTANTE • FAIT DES ERREURS', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.2 },
-    { n: 'PRO', desc: 'IA ÉQUILIBRÉE • VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
-    { n: 'CYBER-PRO', desc: 'IA EXPERTE • POCHE 1-3 & EFFET', errPos: 4, errAng: 0.02, errPow: 0.03, spinSkill: 0.95 }
+    { n: 'ROOKIE', desc: 'IA DEBUTANTE - FAIT DES ERREURS', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.2 },
+    { n: 'PRO', desc: 'IA EQUILIBREE - VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
+    { n: 'CYBER-PRO', desc: 'IA EXPERTE - POCHE 1-3 & EFFET', errPos: 4, errAng: 0.02, errPow: 0.03, spinSkill: 0.95 }
   ];
 
   let NF = 0, FIN = false;
@@ -146,21 +150,117 @@
   let mute = false, musicOn = true;
   let hits = [], mx = -1, my = -1, ptrDown = false, sx = 0, moved = false, hitBtn = false;
   let copiedToast = 0;
-
-  // État de l'IA (Bot)
   let botPlan = null;
 
-  // État Multijoueur P2P (PeerJS / WebRTC)
+  // Etat Multijoueur P2P (PeerJS / WebRTC) & Presence en temps reel
   let peer = null, conn = null;
   let netRole = null; // 'host' (J1) | 'guest' (J2)
-  let netStatus = 'PRÊT À CONNECTER';
+  let netStatus = 'PRET A CONNECTER';
   let roomCode = '';
   let onlineSub = 'choice'; // 'choice' | 'hosting' | 'joining'
   let netSyncTimer = 0;
   let remoteEndPending = null;
+  let myNick = (stats.nick || 'JOUEUR').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8) || 'JOUEUR';
+  let oppNick = 'AMI';
+  let onlineCount = 1;
+  let presencePeer = null;
+  let presenceConns = [];
+  const nickInputEl = document.getElementById('nickInput');
   const roomInputEl = document.getElementById('roomInput');
 
-  // Animation de la balayeuse mécanique (Pinsetter)
+  nickInputEl.value = myNick;
+  nickInputEl.addEventListener('input', () => {
+    const clean = nickInputEl.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8);
+    nickInputEl.value = clean;
+    myNick = clean || 'JOUEUR';
+    stats.nick = myNick;
+    saveStats();
+  });
+
+  // Compteur de joueurs connectes en temps reel sur le site via PeerJS (sans serveur)
+  function initSitePresence() {
+    if (typeof Peer === 'undefined') return;
+    const SLOTS = 12;
+
+    function tryClaimSlot(idx) {
+      if (idx >= SLOTS) {
+        try {
+          presencePeer = new Peer();
+          presencePeer.on('open', () => connectToHubs(-1));
+          presencePeer.on('error', () => {});
+        } catch (e) {}
+        return;
+      }
+      try {
+        const p = new Peer('nolbowl-live-' + idx);
+        p.on('open', () => {
+          presencePeer = p;
+          presencePeer.on('connection', c => {
+            if (!presenceConns.includes(c)) presenceConns.push(c);
+            c.on('open', broadcastPresence);
+            c.on('close', () => {
+              presenceConns = presenceConns.filter(x => x !== c);
+              broadcastPresence();
+            });
+            c.on('data', d => {
+              if (d && d.type === 'count' && typeof d.n === 'number') {
+                onlineCount = Math.max(onlineCount, d.n);
+              }
+            });
+            broadcastPresence();
+          });
+          connectToHubs(idx);
+        });
+        p.on('error', err => {
+          try { p.destroy(); } catch (e) {}
+          if (err && err.type === 'unavailable-id') {
+            tryClaimSlot(idx + 1);
+          }
+        });
+      } catch (e) {
+        // Environnement restreint (ex: preview sandbox sans WebSocket)
+      }
+    }
+
+    function broadcastPresence() {
+      const active = presenceConns.filter(c => c.open);
+      onlineCount = Math.max(1, active.length + 1);
+      active.forEach(c => {
+        try { c.send({ type: 'count', n: onlineCount }); } catch (e) {}
+      });
+    }
+
+    function connectToHubs(skipIdx) {
+      for (let i = 0; i < SLOTS; i++) {
+        if (i === skipIdx) continue;
+        try {
+          const c = presencePeer.connect('nolbowl-live-' + i, { reliable: false });
+          c.on('open', () => {
+            if (!presenceConns.includes(c)) presenceConns.push(c);
+            broadcastPresence();
+          });
+          c.on('data', d => {
+            if (d && d.type === 'count' && typeof d.n === 'number') {
+              onlineCount = Math.max(1, d.n);
+            }
+          });
+          c.on('close', () => {
+            presenceConns = presenceConns.filter(x => x !== c);
+            broadcastPresence();
+          });
+          c.on('error', () => {});
+        } catch (e) {}
+      }
+    }
+
+    tryClaimSlot(0);
+    window.addEventListener('beforeunload', () => {
+      presenceConns.forEach(c => { try { c.close(); } catch (e) {} });
+      if (presencePeer) { try { presencePeer.destroy(); } catch (e) {} }
+    });
+  }
+
+  // Animation de la balayeuse mecanique (Pinsetter)
   let sweeper = { active: false, t: 0, dur: 54, resetRack: false, cleared: false };
 
   /* ==========================================================================
@@ -344,6 +444,7 @@
   }
 
   function closeNetwork() {
+    nickInputEl.style.display = 'none';
     roomInputEl.style.display = 'none';
     if (conn) { try { conn.close(); } catch (e) {} conn = null; }
     if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
@@ -362,27 +463,34 @@
   function setupConn(connection) {
     conn = connection;
     conn.on('open', () => {
-      netStatus = 'CONNECTÉ !';
+      netStatus = 'CONNECTE !';
       arp([523.25, 659.25, 783.99], 60);
+      netSend({ type: 'hello', nick: myNick });
       if (netRole === 'host') {
-        netSend({ type: 'start', mode, seed: Date.now() });
+        netSend({ type: 'start', mode, nick: myNick, seed: Date.now() });
         startGame(true);
       }
     });
     conn.on('data', d => handleNetData(d));
     conn.on('close', () => {
       if (playType === 'online' && st !== 'menu' && st !== 'over') {
-        say('ADVERSAIRE DÉCONNECTÉ', '#f35', 140, 'RETOUR AU MENU');
+        say('ADVERSAIRE DECONNECTE', '#f35', 140, 'RETOUR AU MENU');
         setTimeout(() => { closeNetwork(); st = 'menu'; }, 1800);
       }
-      netStatus = 'CONNEXION FERMÉE';
+      netStatus = 'CONNEXION FERMEE';
     });
     conn.on('error', () => {
-      netStatus = 'ERREUR RÉSEAU';
+      netStatus = 'ERREUR RESEAU';
     });
   }
 
+  function sanitizeNick(raw, fallback) {
+    const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8);
+    return clean || fallback;
+  }
+
   function hostRoom() {
+    myNick = sanitizeNick(nickInputEl.value, 'JOUEUR 1');
     closeNetwork();
     if (typeof Peer === 'undefined') {
       netStatus = 'PEERJS INDISPONIBLE';
@@ -391,28 +499,33 @@
     netRole = 'host';
     onlineSub = 'hosting';
     roomCode = genCode();
-    netStatus = 'CRÉATION DU SALON...';
-    peer = new Peer('nolbowl-' + roomCode);
-    peer.on('open', () => {
-      netStatus = 'EN ATTENTE D\'UN AMI...';
-    });
-    peer.on('connection', c => {
-      setupConn(c);
-    });
-    peer.on('error', err => {
-      if (err && err.type === 'unavailable-id') {
-        hostRoom();
-      } else {
-        netStatus = 'ERREUR : ' + (err.type || 'RÉSEAU');
-      }
-    });
+    netStatus = 'CREATION DU SALON...';
+    try {
+      peer = new Peer('nolbowl-' + roomCode);
+      peer.on('open', () => {
+        netStatus = 'EN ATTENTE D UN AMI...';
+      });
+      peer.on('connection', c => {
+        setupConn(c);
+      });
+      peer.on('error', err => {
+        if (err && err.type === 'unavailable-id') {
+          hostRoom();
+        } else {
+          netStatus = 'ERREUR : ' + (err.type || 'RESEAU');
+        }
+      });
+    } catch (e) {
+      netStatus = 'WEBSOCKET BLOQUE ICI (OK SUR GITHUB PAGES)';
+    }
   }
 
   function openJoinRoom() {
+    myNick = sanitizeNick(nickInputEl.value, 'JOUEUR 2');
     closeNetwork();
     netRole = 'guest';
     onlineSub = 'joining';
-    netStatus = 'ENTRE LE CODE À 4 LETTRES';
+    netStatus = 'ENTRE LE CODE A 4 LETTRES';
     roomInputEl.value = '';
     roomInputEl.style.display = 'block';
     setTimeout(() => roomInputEl.focus(), 50);
@@ -431,78 +544,19 @@
     }
     roomInputEl.style.display = 'none';
     roomCode = code;
-    netStatus = 'CONNEXION À NOL-' + code + '...';
-    peer = new Peer();
-    peer.on('open', () => {
-      const c = peer.connect('nolbowl-' + code, { reliable: true });
-      setupConn(c);
-    });
-    peer.on('error', () => {
-      netStatus = 'SALON INTROUVABLE';
-      tone(150, 0.25, 'sawtooth');
-    });
-  }
-
-  function handleNetData(d) {
-    if (!d || typeof d !== 'object') return;
-    if (d.type === 'start') {
-      mode = d.mode;
-      roomInputEl.style.display = 'none';
-      startGame(true);
-    } else if (d.type === 'aim') {
-      if (!isMyNetTurn() && st === 'aim') {
-        px = d.px;
-        if (ball) ball.x = px;
-        aimLock = d.aimLock;
-        aimA = d.aimA;
-        power = d.power;
-      }
-    } else if (d.type === 'launch') {
-      if (!isMyNetTurn() && st === 'aim') {
-        px = d.px;
-        ball.x = d.px;
-        ball.y = 735;
-        ball.vx = d.vx;
-        ball.vy = d.vy;
-        ball.spin = d.spin || 0;
-        ball.rolling = true;
-        aimA = d.aimA;
-        power = d.power;
-        st = 'roll';
-        settleT = 0;
-        sb = pins.filter(p => !p.gone).length;
-        tone(180, 0.35, 'sawtooth', 0.08, -100);
-        if (d.perfect) {
-          say('PUISSANCE PARFAITE', '#0f8', 55, !FIN ? '+25 PTS BONUS' : 'TRAJECTOIRE OPTIMALE');
-          if (!FIN) PL[cp].bonus += 25;
-        }
-      }
-    } else if (d.type === 'roll_sync') {
-      if (!isMyNetTurn() && st === 'roll' && ball && ball.rolling) {
-        ball.x = d.bx;
-        ball.y = d.by;
-        ball.vx = d.vx;
-        ball.vy = d.vy;
-        ball.spin = d.spin;
-      }
-    } else if (d.type === 'throw_res') {
-      // Synchronisation autoritaire des quilles tombées pour éviter toute divergence P2P
-      if (!isMyNetTurn()) {
-        if (st === 'roll') {
-          remoteEndPending = d;
-          endThrow(d);
-        } else if (st === 'between') {
-          // Correction éventuelle si déjà passé à between
-          pins.forEach((p, idx) => {
-            if (d.pins[idx]) {
-              p.down = d.pins[idx].down;
-              p.gone = d.pins[idx].gone;
-            }
-          });
-        }
-      }
-    } else if (d.type === 'rematch') {
-      startGame(true);
+    netStatus = 'CONNEXION A NOL-' + code + '...';
+    try {
+      peer = new Peer();
+      peer.on('open', () => {
+        const c = peer.connect('nolbowl-' + code, { reliable: true });
+        setupConn(c);
+      });
+      peer.on('error', () => {
+        netStatus = 'SALON INTROUVABLE';
+        tone(150, 0.25, 'sawtooth');
+      });
+    } catch (e) {
+      netStatus = 'WEBSOCKET BLOQUE ICI (OK SUR GITHUB PAGES)';
     }
   }
 
@@ -621,6 +675,7 @@
 
   function startGame(fromNet = false) {
     initAudio();
+    nickInputEl.style.display = 'none';
     roomInputEl.style.display = 'none';
     if (playType === 'online' && !fromNet) {
       netSend({ type: 'rematch' });
@@ -699,9 +754,12 @@
     if (st === 'over' && tk - overAt < 65) return;
     if (st === 'menu') {
       if (playType === 'online') {
+        if (!presencePeer) initSitePresence();
         st = 'online';
         onlineSub = 'choice';
-        netStatus = 'PRÊT À CONNECTER';
+        netStatus = 'PRET A CONNECTER';
+        nickInputEl.value = myNick;
+        nickInputEl.style.display = 'block';
       } else {
         startGame();
       }
@@ -900,7 +958,7 @@
       pl.spares++;
       pl.streak = 0;
       if (np === 1) stats.spares++;
-      say('SPARE !', '#0ff', 95, 'BELLE RÉCUPÉRATION');
+      say('SPARE !', '#0ff', 95, 'BELLE RECUPERATION');
       shake = 11;
       flash = 0.3;
       flashCol = '#00ffff';
@@ -912,7 +970,7 @@
         pl.opens++;
       }
       if (n === 0) {
-        say(gutter ? 'GOUTTIÈRE...' : 'RATÉ...', '#f35', 75, gutter ? 'GARDE LE CENTRE !' : '');
+        say(gutter ? 'GOUTTIERE...' : 'RATE...', '#f35', 75, gutter ? 'GARDE LE CENTRE !' : '');
         tone(140, 0.38, 'sawtooth', 0.08, -85);
       } else if (!done && checkSplit(standing)) {
         const is710 = standing.length === 2 && standing.some(p => p.id === 7) && standing.some(p => p.id === 10);
@@ -1691,7 +1749,8 @@
     if (playType === 'bot') return idx === 0 ? (short ? 'TOI' : 'JOUEUR (TOI)') : (short ? 'BOT' : 'BOT ' + BOT_LEVELS[botDiff].n);
     if (playType === 'online') {
       const isMe = (netRole === 'host' && idx === 0) || (netRole === 'guest' && idx === 1);
-      return isMe ? (short ? 'TOI' : 'TOI (J' + (idx + 1) + ')') : (short ? 'AMI' : 'AMI (J' + (idx + 1) + ')');
+      const name = isMe ? myNick : oppNick;
+      return short ? name.slice(0, 6) : name;
     }
     return short ? 'J' + (idx + 1) : 'JOUEUR ' + (idx + 1);
   }
@@ -1794,7 +1853,7 @@
         txt('TOUR DU BOT (' + BOT_LEVELS[botDiff].n + ')...', W / 2, 777, 8, '#f0f');
         txt('ANALYSE DE LA PISTE EN COURS', W / 2, 793, 7, '#ff0');
       } else if (!isMyNetTurn()) {
-        txt('TOUR DE TON ADVERSAIRE...', W / 2, 777, 8, '#f0f');
+        txt('TOUR DE ' + oppNick + '...', W / 2, 777, 8, '#f0f');
         txt('OBSERVE SON LANCER EN DIRECT', W / 2, 793, 7, '#0ff');
       } else {
         txt(aimLock ? 'CLIC / ESPACE : LANCER' : 'POSITION : < > OU SOURIS', W / 2, 776, 8, '#fff');
@@ -1817,12 +1876,12 @@
       if (isBotTurn()) {
         txt('LANCER DU BOT EN COURS...', W / 2, 778, 8, '#f0f');
       } else if (!isMyNetTurn()) {
-        txt('LANCER ADVERSE EN COURS...', W / 2, 778, 8, '#f0f');
+        txt('LANCER DE ' + oppNick + '...', W / 2, 778, 8, '#f0f');
       } else {
-        txt(gutter ? 'GOUTTIÈRE...' : 'EFFET EN VOL : < > OU GLISSE', W / 2, 778, 8, gutter ? '#f35' : '#0ff');
+        txt(gutter ? 'GOUTTIERE...' : 'EFFET EN VOL : < > OU GLISSE', W / 2, 778, 8, gutter ? '#f35' : '#0ff');
       }
     } else if (st === 'between') {
-      txt('PRÉPARE-TOI...', W / 2, 778, 8, '#fff8');
+      txt('PREPARE-TOI...', W / 2, 778, 8, '#fff8');
     }
   }
 
@@ -1833,12 +1892,26 @@
 
   function drawMenu() {
     overlay(0.86);
+
+    // Badge en temps reel : nombre de joueurs actuellement sur le site
+    const pulse = 0.5 + 0.5 * Math.sin(tk * 0.12);
+    g.fillStyle = 'rgba(0, 255, 136, 0.12)';
+    g.fillRect(110, 14, 260, 24);
+    g.strokeStyle = '#0f88';
+    g.lineWidth = 1.5;
+    g.strokeRect(110, 14, 260, 24);
+    g.fillStyle = `rgba(0, 255, 136, ${(0.5 + pulse * 0.5).toFixed(2)})`;
+    g.beginPath();
+    g.arc(126, 26, 4.5, 0, 7);
+    g.fill();
+    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS EN LIGNE' : ' JOUEUR EN LIGNE'), 248, 30, 7.5, '#0f8', 'center', false);
+
     const y = Math.sin(tk / 20) * 4;
     txt('NOL', W / 2, 114 + y, 56, '#0ff');
     txt('BOWLING', W / 2, 178 + y, 46, '#f0f');
     txt('SYNTHWAVE ARCADE EDITION', W / 2, 210, 8.5, '#ff0');
 
-    // Sélection du mode
+    // Selection du mode
     txt('MODE DE JEU', W / 2, 250, 8, mrow === 0 ? '#ff0' : '#0ff');
     MODES.forEach((m, i) => {
       btn(24 + i * 148, 260, 136, 36, m.n, mode === i, () => {
@@ -1849,7 +1922,7 @@
     });
     txt(MODES[mode].d, W / 2, 314, 6.8, '#fffb', 'center', false);
 
-    // Sélection du type d'adversaire (4 options)
+    // Selection du type d'adversaire (4 options)
     txt('ADVERSAIRE', W / 2, 346, 8, mrow === 1 ? '#ff0' : '#f0f');
     const P_TYPES = [
       ['SOLO', 'solo'],
@@ -1866,7 +1939,7 @@
       }, 7.2, val === 'online' ? '#0f8' : '#f0f');
     });
 
-    // Sous-options dynamiques selon le type sélectionné (Difficulté Bot ou info P2P)
+    // Sous-options dynamiques selon le type selectionne (Difficulte Bot ou info P2P)
     if (playType === 'bot') {
       BOT_LEVELS.forEach((b, i) => {
         btn(24 + i * 148, 402, 136, 30, b.n, botDiff === i, () => {
@@ -1877,14 +1950,14 @@
       txt(BOT_LEVELS[botDiff].desc, W / 2, 448, 6.5, '#ff0', 'center', false);
     } else if (playType === 'online') {
       txt('MULTIJOUEUR DIRECT P2P (SANS SERVEUR)', W / 2, 422, 6.8, '#0f8', 'center', false);
-      txt('CRÉE UN SALON OU REJOINS UN AMI PAR CODE', W / 2, 440, 6.5, '#fffb', 'center', false);
+      txt('CHOISIS TON PSEUDO & REJOINS UN AMI', W / 2, 440, 6.5, '#fffb', 'center', false);
     } else if (playType === 'local') {
-      txt('2 JOUEURS SUR LE MÊME ÉCRAN (TOUR À TOUR)', W / 2, 428, 6.8, '#fffb', 'center', false);
+      txt('2 JOUEURS SUR LE MEME ECRAN (TOUR A TOUR)', W / 2, 428, 6.8, '#fffb', 'center', false);
     } else {
       txt('JOUE EN SOLO ET BATS TON RECORD INFINI', W / 2, 428, 6.8, '#fffb', 'center', false);
     }
 
-    // Sélecteur de Skin de Boule
+    // Selecteur de Skin de Boule
     txt('BOULE ARCADE', W / 2, 476, 8, '#0f8');
     SKINS.forEach((sk, i) => {
       const unlocked = stats.strikes >= sk.req;
@@ -1897,7 +1970,7 @@
           tone(660, 0.08);
         } else {
           tone(160, 0.15, 'sawtooth');
-          say('BLOQUÉ', '#f35', 55, sk.req + ' STRIKES REQUIS');
+          say('BLOQUE', '#f35', 55, sk.req + ' STRIKES REQUIS');
         }
       }, 7, sk.glow, !unlocked);
 
@@ -1918,9 +1991,12 @@
     const mainLabel = playType === 'online' ? 'SALON EN LIGNE' : 'JOUER';
     btn(90, 558, 300, 52, mainLabel, Math.floor(tk / 28) % 2 === 0, () => {
       if (playType === 'online') {
+        if (!presencePeer) initSitePresence();
         st = 'online';
         onlineSub = 'choice';
-        netStatus = 'PRÊT À CONNECTER';
+        netStatus = 'PRET A CONNECTER';
+        nickInputEl.value = myNick;
+        nickInputEl.style.display = 'block';
         tone(620, 0.08);
       } else {
         startGame();
@@ -1935,8 +2011,8 @@
 
     // Mini guide rapide
     [
-      '1. PLACE LA BOULE • 2. BLOQUE L\'ANGLE',
-      '3. VISE LE VERT • 4. EFFET EN VOL < >'
+      '1. PLACE LA BOULE - 2. BLOQUE L ANGLE',
+      '3. VISE LE VERT - 4. EFFET EN VOL < >'
     ].forEach((s, i) => txt(s, W / 2, 690 + i * 20, 7, '#fff9', 'center', false));
 
     txt('RECORD INFINI : ' + String(stats.best).padStart(5, '0'), W / 2, 768, 8.5, '#ff0', 'center', true);
@@ -1955,35 +2031,39 @@
 
   function drawOnline() {
     overlay(0.92);
-    txt('MULTIJOUEUR P2P', W / 2, 130, 20, '#0f8');
-    txt('DIRECT WEBRTC • SANS SERVEUR', W / 2, 162, 8, '#0ff');
+    txt('MULTIJOUEUR P2P', W / 2, 105, 20, '#0f8');
+    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS ACTIFS SUR LE SITE' : ' JOUEUR ACTIF SUR LE SITE'), W / 2, 134, 7.5, '#0ff');
+
+    // Champ pseudo toujours visible avant de lancer la partie
+    txt('TON PSEUDO (8 CAR. MAX) :', W / 2, 182, 8, '#f0f');
+    // Le champ HTML #nickInput est positionne juste ici (top: 27.5%)
 
     if (onlineSub === 'choice') {
-      txt('MODE SÉLECTIONNÉ : ' + MODES[mode].n, W / 2, 220, 8, '#ff0');
-      btn(70, 270, 340, 58, 'CRÉER UN SALON', true, hostRoom, 12, '#0ff');
-      txt('OBTIENS UN CODE À PARTAGER', W / 2, 346, 7, '#fff9', 'center', false);
+      txt('MODE SELECTIONNE : ' + MODES[mode].n, W / 2, 272, 8, '#ff0');
+      btn(70, 305, 340, 56, 'CREER UN SALON', true, hostRoom, 12, '#0ff');
+      txt('OBTIENS UN CODE A PARTAGER', W / 2, 378, 7, '#fff9', 'center', false);
 
-      btn(70, 390, 340, 58, 'REJOINDRE UN SALON', false, openJoinRoom, 12, '#f0f');
-      txt('ENTRE LE CODE DE TON AMI', W / 2, 466, 7, '#fff9', 'center', false);
+      btn(70, 415, 340, 56, 'REJOINDRE UN SALON', false, openJoinRoom, 12, '#f0f');
+      txt('ENTRE LE CODE DE TON AMI', W / 2, 488, 7, '#fff9', 'center', false);
     } else if (onlineSub === 'hosting') {
-      txt('PARTAGE CE CODE À TON AMI :', W / 2, 230, 8.5, '#fff');
+      txt('PARTAGE CE CODE A TON AMI :', W / 2, 275, 8.5, '#fff');
 
       g.fillStyle = '#ffffff12';
-      g.fillRect(90, 255, 300, 68);
+      g.fillRect(90, 292, 300, 62);
       g.strokeStyle = '#0ff';
       g.lineWidth = 2.5;
-      g.strokeRect(90, 255, 300, 68);
-      txt(roomCode || '....', W / 2, 302, 28, '#ff0');
+      g.strokeRect(90, 292, 300, 62);
+      txt(roomCode || '....', W / 2, 336, 26, '#ff0');
 
-      btn(110, 342, 260, 40, copiedToast > 0 ? 'CODE COPIÉ !' : 'COPIER LE CODE', false, copyRoomCode, 9, '#0f8');
-      txt(netStatus, W / 2, 425, 8.5, '#0ff');
+      btn(110, 372, 260, 40, copiedToast > 0 ? 'CODE COPIE !' : 'COPIER LE CODE', false, copyRoomCode, 9, '#0f8');
+      txt(netStatus, W / 2, 448, 8.5, '#0ff');
       if (Math.floor(tk / 25) % 2 === 0) {
-        txt('EN ATTENTE DU JOUEUR 2...', W / 2, 455, 7.5, '#f0f');
+        txt('EN ATTENTE DU JOUEUR 2...', W / 2, 478, 7.5, '#f0f');
       }
     } else if (onlineSub === 'joining') {
-      txt('SAISIS LE CODE DU SALON :', W / 2, 240, 9, '#fff');
-      // Le champ HTML #roomInput est positionné juste ici (top: 46%)
-      btn(110, 420, 260, 48, 'CONNECTER', true, joinRoomSubmit, 12, '#0f8');
+      txt('SAISIS LE CODE DU SALON :', W / 2, 315, 9, '#fff');
+      // Le champ HTML #roomInput est positionne juste ici (top: 46%)
+      btn(110, 425, 260, 48, 'CONNECTER', true, joinRoomSubmit, 12, '#0f8');
       txt(netStatus, W / 2, 505, 8, '#ff0');
     }
 
@@ -1997,14 +2077,14 @@
   function drawStats() {
     overlay(0.92);
     txt('STATISTIQUES', W / 2, 130, 22, '#0ff');
-    txt('CARRIÈRE ARCADE', W / 2, 162, 9, '#f0f');
+    txt('CARRIERE ARCADE', W / 2, 162, 9, '#f0f');
 
     const rows = [
       ['RECORD MODE INFINI', String(stats.best).padStart(5, '0'), '#ff0'],
       ['TOTAL STRIKES (X)', String(stats.strikes), '#f0f'],
       ['TOTAL SPARES (/)', String(stats.spares), '#0ff'],
-      ['MEILLEURE SÉRIE X', String(stats.maxStreak), '#0f8'],
-      ['PARTIES TERMINÉES', String(stats.games), '#fff']
+      ['MEILLEURE SERIE X', String(stats.maxStreak), '#0f8'],
+      ['PARTIES TERMINEES', String(stats.games), '#fff']
     ];
 
     rows.forEach(([label, val, col], i) => {
@@ -2018,15 +2098,15 @@
       txt(val, W - 52, y + 6, 13, col, 'right', true);
     });
 
-    txt('DÉBLOQUE DES BOULES EN FAISANT DES STRIKES !', W / 2, 600, 7, '#ff0', 'center', false);
+    txt('DEBLOQUE DES BOULES EN FAISANT DES STRIKES !', W / 2, 600, 7, '#ff0', 'center', false);
     btn(110, 650, 260, 50, 'RETOUR MENU', true, () => { st = 'menu'; tone(440, 0.06); }, 11, '#0ff');
   }
 
   function drawPass() {
     overlay(0.84);
     txt('JOUEUR ' + (cp + 1), W / 2, 320, 36, cp ? '#f0f' : '#0ff');
-    txt('À TOI DE JOUER !', W / 2, 376, 12, '#ff0');
-    txt('PASSE L\'APPAREIL AU JOUEUR ' + (cp + 1), W / 2, 420, 8, '#fff', 'center', false);
+    txt('A TOI DE JOUER !', W / 2, 376, 12, '#ff0');
+    txt('PASSE L APPAREIL AU JOUEUR ' + (cp + 1), W / 2, 420, 8, '#fff', 'center', false);
     if (Math.floor(tk / 28) % 2 === 0) {
       txt('TOUCHE OU ESPACE POUR LANCER', W / 2, 500, 9.5, '#0ff');
     }
@@ -2034,7 +2114,7 @@
 
   function shareScore(scoreVal) {
     const modeName = MODES[mode].n;
-    const text = `🎳 NolBowling (${modeName}) : ${scoreVal} pts ! Peux-tu battre mon score ?`;
+    const text = `NolBowling (${modeName}) : ${scoreVal} pts ! Peux-tu battre mon score ?`;
     const ta = document.createElement('textarea');
     ta.value = text;
     document.body.appendChild(ta);
@@ -2047,7 +2127,7 @@
 
   function drawOver() {
     overlay(0.91);
-    txt(FIN && fi >= NF ? 'PARTIE TERMINÉE' : 'FIN DE PARTIE', W / 2, 130, 20, '#ff0');
+    txt(FIN && fi >= NF ? 'PARTIE TERMINEE' : 'FIN DE PARTIE', W / 2, 130, 20, '#ff0');
 
     const tt = PL.map(total);
     const top = Math.max(...tt);
@@ -2065,24 +2145,24 @@
 
       txt(playerLabel(i, false), W / 2, y, 10, col);
       txt(String(tt[i]), W / 2, y + 40, 28, win || np === 1 ? '#ff0' : '#fff');
-      txt(`STRIKES: ${p.strikes}  •  SPARES: ${p.spares}  •  SÉRIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
+      txt(`STRIKES: ${p.strikes}  -  SPARES: ${p.spares}  -  SERIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
     });
 
     if (np > 1) {
       let w = '';
       if (tt.filter(v => v === top).length > 1) {
-        w = 'ÉGALITÉ PARFAITE !';
+        w = 'EGALITE PARFAITE !';
       } else {
         const winIdx = tt.indexOf(top);
         w = playerLabel(winIdx, false) + ' GAGNE !';
       }
       txt(w, W / 2, 485, 10, '#0f8');
     } else if (!FIN && total(PL[0]) >= stats.best && stats.best > 0) {
-      txt('★ NOUVEAU RECORD PERSONNEL ! ★', W / 2, 365, 10, '#0f8');
+      txt('* NOUVEAU RECORD PERSONNEL ! *', W / 2, 365, 10, '#0f8');
     }
 
     btn(90, 525, 300, 50, 'REJOUER', Math.floor(tk / 28) % 2 === 0, () => startGame(false), 14, '#ff0');
-    btn(90, 590, 300, 42, copiedToast > 0 ? 'SCORE COPIÉ !' : 'COPIER LE SCORE', false, () => shareScore(top), 9.5, '#0f8');
+    btn(90, 590, 300, 42, copiedToast > 0 ? 'SCORE COPIE !' : 'COPIER LE SCORE', false, () => shareScore(top), 9.5, '#0f8');
     btn(90, 646, 300, 42, 'MENU PRINCIPAL', false, () => {
       if (playType === 'online') closeNetwork();
       st = 'menu';
@@ -2226,6 +2306,10 @@
   cv.addEventListener('pointercancel', up);
 
   window.addEventListener('keydown', e => {
+    if (document.activeElement === nickInputEl) {
+      if (e.code === 'Enter') nickInputEl.blur();
+      return;
+    }
     if (document.activeElement === roomInputEl) {
       if (e.code === 'Enter') joinRoomSubmit();
       return;
