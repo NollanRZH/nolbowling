@@ -102,6 +102,16 @@
   /* ==========================================================================
      1. INITIALISATION & CONSTANTES
      ========================================================================== */
+  const DB_URL = 'https://nolbowling-default-rtdb.europe-west1.firebasedatabase.app';
+  const PEER_CFG = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    }
+  };
+
   const stage = document.getElementById('stage');
   const cv = document.getElementById('c');
   const g = cv.getContext('2d', { alpha: false, desynchronized: true });
@@ -177,7 +187,7 @@
   }));
 
   /* ==========================================================================
-     2. ETAT DU JEU, PSEUDOS, SALONS PUBLICS (1-4 JOUEURS) & RESEAU MESH P2P
+     2. ETAT DU JEU, PSEUDOS, FIREBASE REALTIME & P2P (1-4 JOUEURS)
      ========================================================================== */
   let st = 'menu';
   let tk = 0;
@@ -203,11 +213,9 @@
 
   let myNick = sanitizeNick(stats.nick, 'JOUEUR');
   let onlineCount = 1;
-  let presencePeer = null;
-  const presenceConns = new Map();
-  const knownPeers = new Set();
   const publicRooms = new Map(); // code -> { code, host, count, max, mode, ts }
-  const mySessionId = 'nbu-' + Math.random().toString(36).slice(2, 10);
+  const mySessionId = 'nb_' + Math.random().toString(36).slice(2, 11);
+  let lastPublishedRoomCode = '';
 
   const nickInputEl = document.getElementById('nickInput');
   const roomInputEl = document.getElementById('roomInput');
@@ -268,7 +276,7 @@
   let onlineSub = 'lobby'; // 'lobby' | 'hosting' | 'joining'
   let lobbyScroll = 0;
   let netSyncTimer = 0;
-  let roomRoster = []; // [{ nick, slot, isBot, peerId }]
+  let roomRoster = [];
 
   let sweeper = { active: false, t: 0, dur: 52, resetRack: false, cleared: false };
 
@@ -282,34 +290,152 @@
   }
 
   /* --------------------------------------------------------------------------
-     Reseau de decouverte de salons publics & presence via Hubs PeerJS
+     Firebase Realtime Database : Salons & Joueurs en ligne en temps reel
      -------------------------------------------------------------------------- */
-  function broadcastRoomUpdate(roomObj) {
+  async function fbPut(path, data) {
+    try {
+      await fetch(`${DB_URL}/${path}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        keepalive: true
+      });
+    } catch (e) {}
+  }
+
+  async function fbDelete(path) {
+    try {
+      await fetch(`${DB_URL}/${path}.json`, {
+        method: 'DELETE',
+        keepalive: true
+      });
+    } catch (e) {}
+  }
+
+  function publishRoomToFirebase(roomObj) {
     if (!roomObj || !roomObj.code) return;
-    const payload = { ...roomObj, ts: Date.now() };
-    publicRooms.set(roomObj.code, payload);
-    presenceConns.forEach(c => {
-      if (c && c.open) {
-        try { c.send({ type: 'room_pub', room: payload }); } catch (e) {}
+    const payload = {
+      code: roomObj.code,
+      host: sanitizeNick(roomObj.host, 'HOTE'),
+      count: Number(roomObj.count) || 1,
+      max: Number(roomObj.max) || 2,
+      mode: Number(roomObj.mode) || 0,
+      ts: Date.now()
+    };
+    lastPublishedRoomCode = payload.code;
+    publicRooms.set(payload.code, payload);
+    fbPut(`rooms/${payload.code}`, payload);
+  }
+
+  function removeRoomFromFirebase(code) {
+    const target = code || lastPublishedRoomCode;
+    if (!target) return;
+    if (target === lastPublishedRoomCode) lastPublishedRoomCode = '';
+    publicRooms.delete(target);
+    fbDelete(`rooms/${target}`);
+  }
+
+  async function syncFirebaseLobby() {
+    const now = Date.now();
+    try {
+      const [roomsRes, presRes] = await Promise.all([
+        fetch(`${DB_URL}/rooms.json`, { cache: 'no-store' }),
+        fetch(`${DB_URL}/presence.json`, { cache: 'no-store' })
+      ]);
+
+      if (roomsRes.ok) {
+        const roomsData = await roomsRes.json();
+        publicRooms.clear();
+        if (roomsData && typeof roomsData === 'object') {
+          Object.entries(roomsData).forEach(([key, r]) => {
+            if (!r || typeof r !== 'object') return;
+            const age = now - (Number(r.ts) || 0);
+            if (age > 25000) {
+              fbDelete(`rooms/${key}`);
+              return;
+            }
+            const code = String(r.code || key).toUpperCase();
+            const count = Number(r.count) || 1;
+            const max = Number(r.max) || 2;
+            if (count < max) {
+              publicRooms.set(code, {
+                code,
+                host: sanitizeNick(r.host, 'HOTE'),
+                count,
+                max,
+                mode: Number(r.mode) || 0,
+                ts: Number(r.ts) || now
+              });
+            }
+          });
+        }
       }
+
+      if (presRes.ok) {
+        const presData = await presRes.json();
+        let active = 0;
+        if (presData && typeof presData === 'object') {
+          Object.entries(presData).forEach(([id, p]) => {
+            const ts = typeof p === 'object' && p ? Number(p.ts) || 0 : Number(p) || 0;
+            if (now - ts > 25000) {
+              fbDelete(`presence/${id}`);
+            } else {
+              active++;
+            }
+          });
+        }
+        onlineCount = Math.max(1, active);
+      }
+    } catch (e) {}
+  }
+
+  function sendPresencePing() {
+    fbPut(`presence/${mySessionId}`, {
+      ts: Date.now(),
+      nick: myNick
     });
   }
 
-  function broadcastRoomClose(code) {
-    if (!code) return;
-    publicRooms.delete(code);
-    presenceConns.forEach(c => {
-      if (c && c.open) {
-        try { c.send({ type: 'room_del', code }); } catch (e) {}
+  function initFirebaseRealtime() {
+    sendPresencePing();
+    syncFirebaseLobby();
+
+    setInterval(() => {
+      sendPresencePing();
+      if (netRole === 'host' && onlineSub === 'hosting' && roomCode && roomRoster.length < onlineCapacity) {
+        publishRoomToFirebase({
+          code: roomCode,
+          host: myNick,
+          count: roomRoster.length,
+          max: onlineCapacity,
+          mode
+        });
       }
+    }, 8000);
+
+    setInterval(() => {
+      if (st === 'menu' || st === 'online') {
+        syncFirebaseLobby();
+      }
+    }, 1800);
+
+    window.addEventListener('beforeunload', () => {
+      if (netRole === 'host' && roomCode) {
+        removeRoomFromFirebase(roomCode);
+      } else if (lastPublishedRoomCode) {
+        removeRoomFromFirebase(lastPublishedRoomCode);
+      }
+      fbDelete(`presence/${mySessionId}`);
     });
   }
+
+  setTimeout(initFirebaseRealtime, 150);
 
   function getActivePublicRooms() {
     const now = Date.now();
     const list = [];
     publicRooms.forEach((r, code) => {
-      if (!r || now - (r.ts || 0) > 20000) {
+      if (!r || now - (r.ts || 0) > 25000) {
         publicRooms.delete(code);
       } else if (r.count < r.max) {
         list.push(r);
@@ -318,198 +444,6 @@
     list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
     return list;
   }
-
-  function requestHubSync() {
-    presenceConns.forEach(c => {
-      if (c && c.open) {
-        try {
-          c.send({
-            type: 'presence',
-            from: mySessionId,
-            list: Array.from(knownPeers),
-            rooms: getActivePublicRooms()
-          });
-        } catch (e) {}
-      }
-    });
-  }
-
-  function initSitePresence() {
-    if (typeof Peer === 'undefined' || presencePeer) return;
-    const SLOTS = 8;
-    knownPeers.add(mySessionId);
-
-    function updateCount() {
-      onlineCount = Math.max(1, knownPeers.size);
-    }
-
-    function sendPresence(c) {
-      if (c && c.open) {
-        try {
-          c.send({
-            type: 'presence',
-            from: mySessionId,
-            list: Array.from(knownPeers),
-            rooms: getActivePublicRooms()
-          });
-        } catch (e) {}
-      }
-    }
-
-    function broadcastPresence() {
-      updateCount();
-      presenceConns.forEach(c => sendPresence(c));
-    }
-
-    function bindPresenceConn(c) {
-      const pid = c.peer;
-      presenceConns.set(pid, c);
-      c.on('open', () => {
-        sendPresence(c);
-        if (netRole === 'host' && onlineSub === 'hosting' && roomCode && roomRoster.length < onlineCapacity) {
-          broadcastRoomUpdate({
-            code: roomCode,
-            host: myNick,
-            count: roomRoster.length,
-            max: onlineCapacity,
-            mode,
-            ts: Date.now()
-          });
-        }
-        broadcastPresence();
-      });
-      c.on('data', d => {
-        if (!d || typeof d !== 'object') return;
-        if (d.type === 'presence') {
-          let changed = false;
-          if (Array.isArray(d.list)) {
-            d.list.forEach(id => {
-              if (!knownPeers.has(id)) {
-                knownPeers.add(id);
-                changed = true;
-              }
-            });
-          }
-          if (Array.isArray(d.rooms)) {
-            const now = Date.now();
-            d.rooms.forEach(r => {
-              if (r && r.code && r.count < r.max && now - (r.ts || now) < 20000) {
-                const existing = publicRooms.get(r.code);
-                if (!existing || (r.ts || 0) >= (existing.ts || 0)) {
-                  publicRooms.set(r.code, { ...r, ts: r.ts || now });
-                }
-              }
-            });
-          }
-          updateCount();
-          if (changed) broadcastPresence();
-        } else if (d.type === 'room_pub' && d.room && d.room.code) {
-          const r = { ...d.room, ts: Date.now() };
-          const prev = publicRooms.get(r.code);
-          const isNewOrChanged = !prev || prev.count !== r.count || prev.max !== r.max || prev.mode !== r.mode || prev.host !== r.host;
-          publicRooms.set(r.code, r);
-          if (isNewOrChanged) {
-            presenceConns.forEach(other => {
-              if (other !== c && other.open) {
-                try { other.send({ type: 'room_pub', room: r }); } catch (e) {}
-              }
-            });
-          }
-        } else if (d.type === 'room_del' && d.code) {
-          if (publicRooms.has(d.code)) {
-            publicRooms.delete(d.code);
-            presenceConns.forEach(other => {
-              if (other !== c && other.open) {
-                try { other.send({ type: 'room_del', code: d.code }); } catch (e) {}
-              }
-            });
-          }
-        } else if (d.type === 'bye' && d.from) {
-          knownPeers.delete(d.from);
-          updateCount();
-          broadcastPresence();
-        }
-      });
-      c.on('close', () => {
-        presenceConns.delete(pid);
-        broadcastPresence();
-      });
-      c.on('error', () => {
-        presenceConns.delete(pid);
-      });
-    }
-
-    function connectToHubs(skipIdx) {
-      for (let i = 0; i < SLOTS; i++) {
-        if (i === skipIdx) continue;
-        const targetId = 'nolbowl-hub-' + i;
-        if (presenceConns.has(targetId)) continue;
-        try {
-          const c = presencePeer.connect(targetId, { reliable: true });
-          bindPresenceConn(c);
-        } catch (e) {}
-      }
-    }
-
-    function tryClaimHub(idx) {
-      if (idx >= SLOTS) {
-        try {
-          const p = new Peer(mySessionId);
-          p.on('open', () => {
-            presencePeer = p;
-            presencePeer.on('connection', bindPresenceConn);
-            connectToHubs(-1);
-          });
-          p.on('error', () => {});
-        } catch (e) {}
-        return;
-      }
-      try {
-        const p = new Peer('nolbowl-hub-' + idx);
-        p.on('open', () => {
-          presencePeer = p;
-          presencePeer.on('connection', bindPresenceConn);
-          connectToHubs(idx);
-        });
-        p.on('error', err => {
-          try { p.destroy(); } catch (e) {}
-          if (err && err.type === 'unavailable-id') {
-            tryClaimHub(idx + 1);
-          }
-        });
-      } catch (e) {}
-    }
-
-    tryClaimHub(0);
-
-    setInterval(() => {
-      getActivePublicRooms();
-      if (presencePeer && !presencePeer.destroyed) {
-        connectToHubs(-1);
-        broadcastPresence();
-      }
-      if (netRole === 'host' && onlineSub === 'hosting' && roomCode && roomRoster.length < onlineCapacity) {
-        broadcastRoomUpdate({
-          code: roomCode,
-          host: myNick,
-          count: roomRoster.length,
-          max: onlineCapacity,
-          mode,
-          ts: Date.now()
-        });
-      }
-    }, 3000);
-
-    window.addEventListener('beforeunload', () => {
-      if (netRole === 'host' && roomCode) broadcastRoomClose(roomCode);
-      presenceConns.forEach(c => {
-        try { c.send({ type: 'bye', from: mySessionId }); c.close(); } catch (e) {}
-      });
-      if (presencePeer) { try { presencePeer.destroy(); } catch (e) {} }
-    });
-  }
-
-  setTimeout(initSitePresence, 200);
 
   /* ==========================================================================
      3. AUDIO SYNTHWAVE (WEB AUDIO API)
@@ -716,7 +650,9 @@
     clearPendingTimers();
     nickInputEl.style.display = 'none';
     roomInputEl.style.display = 'none';
-    if (netRole === 'host' && roomCode) broadcastRoomClose(roomCode);
+    if (netRole === 'host' && roomCode) {
+      removeRoomFromFirebase(roomCode);
+    }
     while (hostConns.length) {
       const c = hostConns.pop();
       try { c.close(); } catch (e) {}
@@ -747,7 +683,7 @@
       mode
     });
     if (roomRoster.length >= onlineCapacity) {
-      broadcastRoomClose(roomCode);
+      removeRoomFromFirebase(roomCode);
       if (!autoStartTimer) {
         autoStartTimer = setTimeout(() => {
           autoStartTimer = null;
@@ -757,13 +693,12 @@
         }, 650);
       }
     } else {
-      broadcastRoomUpdate({
+      publishRoomToFirebase({
         code: roomCode,
         host: myNick,
         count: roomRoster.length,
         max: onlineCapacity,
-        mode,
-        ts: Date.now()
+        mode
       });
     }
   }
@@ -771,7 +706,7 @@
   function launchOnlineMatch() {
     if (netRole !== 'host') return;
     clearPendingTimers();
-    broadcastRoomClose(roomCode);
+    removeRoomFromFirebase(roomCode);
     while (roomRoster.length < onlineCapacity && roomRoster.length > 1) {
       roomRoster.push({
         nick: 'BOT ' + roomRoster.length,
@@ -945,6 +880,7 @@
     nickInputEl.value = myNick;
     stats.nick = myNick;
     saveStats();
+    sendPresencePing();
   }
 
   function hostRoom() {
@@ -967,19 +903,27 @@
     roomCode = genCode();
     roomRoster = [{ nick: myNick, slot: 0, isBot: false, peerId: null }];
     netStatus = 'CREATION DU SALON...';
+
+    publishRoomToFirebase({
+      code: roomCode,
+      host: myNick,
+      count: 1,
+      max: onlineCapacity,
+      mode
+    });
+
     try {
-      peer = new Peer('nolbowl-' + roomCode);
+      peer = new Peer('nolbowl-' + roomCode, PEER_CFG);
       roomRoster[0].peerId = peer.id;
       peer.on('open', id => {
         if (roomRoster[0]) roomRoster[0].peerId = id;
         netStatus = 'EN ATTENTE DES JOUEURS...';
-        broadcastRoomUpdate({
+        publishRoomToFirebase({
           code: roomCode,
           host: myNick,
-          count: 1,
+          count: roomRoster.length,
           max: onlineCapacity,
-          mode,
-          ts: Date.now()
+          mode
         });
       });
       peer.on('connection', c => {
@@ -987,12 +931,14 @@
       });
       peer.on('error', err => {
         if (err && err.type === 'unavailable-id') {
+          removeRoomFromFirebase(roomCode);
           hostRoom();
         } else {
           netStatus = 'ERREUR : ' + (err && err.type ? err.type : 'RESEAU');
         }
       });
     } catch (e) {
+      removeRoomFromFirebase(roomCode);
       netStatus = 'RESEAU BLOQUE';
     }
   }
@@ -1028,14 +974,13 @@
     roomCode = cleanCode;
     netStatus = 'CONNEXION A ' + cleanCode + '...';
     try {
-      peer = new Peer();
+      peer = new Peer(PEER_CFG);
       peer.on('open', () => {
         const c = peer.connect('nolbowl-' + cleanCode, { reliable: true });
         setupGuestConn(c);
       });
       peer.on('error', () => {
         netStatus = 'SALON INTROUVABLE';
-        publicRooms.delete(cleanCode);
         tone(150, 0.25, 'sawtooth');
       });
     } catch (e) {
@@ -1244,13 +1189,7 @@
     if (st === 'over' && tk - overAt < 65) return;
     if (st === 'menu') {
       if (playType === 'online') {
-        if (!presencePeer) initSitePresence();
-        st = 'online';
-        onlineSub = 'lobby';
-        netStatus = 'CHOISIS UN SALON OU CREE LE TIEN';
-        nickInputEl.value = stats.nick ? myNick : '';
-        nickInputEl.style.display = 'block';
-        requestHubSync();
+        openOnlineLobby();
       } else {
         startGame();
       }
@@ -2408,14 +2347,14 @@
   }
 
   function openOnlineLobby() {
-    if (!presencePeer) initSitePresence();
     st = 'online';
     onlineSub = 'lobby';
     lobbyScroll = 0;
     netStatus = 'CHOISIS UN SALON OU CREE LE TIEN';
     nickInputEl.value = stats.nick ? myNick : '';
     nickInputEl.style.display = 'block';
-    requestHubSync();
+    sendPresencePing();
+    syncFirebaseLobby();
   }
 
   function drawMenu() {
@@ -2594,19 +2533,20 @@
       const maxScroll = Math.max(0, rooms.length - 3);
       if (lobbyScroll > maxScroll) lobbyScroll = maxScroll;
 
-      txt(`SALONS DISPO (${rooms.length})`, 148, 364, 7.5, '#0f8', 'center', false);
+      txt(`SALONS DISPO (${rooms.length})`, 144, 364, 7.5, '#0f8', 'center', false);
 
       btn(W - 134, 348, 102, 26, 'ACTUALISER', false, () => {
-        requestHubSync();
+        sendPresencePing();
+        syncFirebaseLobby();
         tone(520, 0.05);
       }, 6.5, '#0ff');
 
       if (rooms.length > 3) {
-        btn(256, 348, 32, 26, '▲', false, () => {
+        btn(252, 348, 32, 26, '▲', false, () => {
           lobbyScroll = Math.max(0, lobbyScroll - 1);
           tone(480, 0.04);
         }, 7, '#ff0');
-        btn(292, 348, 32, 26, '▼', false, () => {
+        btn(288, 348, 32, 26, '▼', false, () => {
           lobbyScroll = Math.min(maxScroll, lobbyScroll + 1);
           tone(480, 0.04);
         }, 7, '#ff0');
