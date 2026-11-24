@@ -144,7 +144,7 @@
     { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES • 10 FRAMES' }
   ];
 
-  // Liste des boules disponibles (10 boules sur 2 rangées de 5)
+  // Liste des boules disponibles (11 boules sur 2 rangées : 6 + 5)
   const SKINS = [
     { id: 'cyan', name: 'CYBER CYAN', label: 'CYAN', c1: '#ffffff', c2: '#00ffff', c3: '#6600ff', glow: '#00ffff', trail: '#00ffff', req: 0 },
     { id: 'magenta', name: 'PLASMA PINK', label: 'PINK', c1: '#ffffff', c2: '#ff22ee', c3: '#660044', glow: '#ff00ff', trail: '#ff44ff', req: 0 },
@@ -155,7 +155,8 @@
     { id: 'mexique', name: 'MEXIQUE', label: 'MEXIQUE', c1: '#ffffff', c2: '#006847', c3: '#ce1126', glow: '#00d97e', trail: '#ff4444', req: 0 },
     { id: 'pologne', name: 'POLOGNE', label: 'POLOGNE', c1: '#ffffff', c2: '#dc143c', c3: '#8b001e', glow: '#ff4d6d', trail: '#ff4d6d', req: 0 },
     { id: 'bretagne', name: 'BRETAGNE', label: 'BZH', c1: '#ffffff', c2: '#111111', c3: '#000000', glow: '#ffffff', trail: '#ffffff', req: 0 },
-    { id: 'rennes', name: 'STADE RENNAIS', label: 'RENNES', c1: '#ff4444', c2: '#c8102e', c3: '#111111', glow: '#ff2a3c', trail: '#ff2a3c', req: 0 }
+    { id: 'rennes', name: 'STADE RENNAIS', label: 'RENNES', c1: '#ff4444', c2: '#c8102e', c3: '#111111', glow: '#ff2a3c', trail: '#ff2a3c', req: 0 },
+    { id: 'nc', name: 'NOUVELLE-CALEDONIE', label: 'NC', c1: '#ffd200', c2: '#0035ad', c3: '#009543', glow: '#ffd200', trail: '#ffd200', req: 0 }
   ];
 
   const BOT_LEVELS = [
@@ -2240,7 +2241,7 @@
         g.stroke();
       }
     } else if (type === 'pologne') {
-      // Drapeau de la Pologne : blanc pur en haut, rouge cramoisi pur en bas (sans aucun motif ajouté)
+      // Drapeau de la Pologne : blanc pur en haut, rouge cramoisi pur en bas
       const topWhite = locked ? '#888888' : '#f8f9fb';
       const botRed = locked ? '#484848' : '#dc143c';
 
@@ -2263,16 +2264,13 @@
         g.fillRect(-r, -r + bIdx * bandH, r * 2.02, bandH + 0.4);
       }
 
-      // Canton supérieur gauche noir (5 bandes de hauteur, largeur nette)
       const cantW = r * 1.02;
       const cantH = bandH * 5 + 0.4;
       g.fillStyle = darkB;
       g.fillRect(-r, -r, cantW, cantH);
 
-      // Mouchetures d'hermine blanches bien lisibles
       g.fillStyle = lightB;
       const drawHermine = (hx, hy, hs) => {
-        // Queue verticale en pointe vers le bas
         g.beginPath();
         g.moveTo(hx - hs * 0.22, hy + hs * 0.12);
         g.lineTo(hx + hs * 0.22, hy + hs * 0.12);
@@ -2280,7 +2278,6 @@
         g.closePath();
         g.fill();
 
-        // Tête / corps en trèfle d'hermine
         g.beginPath();
         g.arc(hx, hy - hs * 0.24, hs * 0.34, 0, Math.PI * 2);
         g.arc(hx - hs * 0.38, hy + hs * 0.04, hs * 0.25, 0, Math.PI * 2);
@@ -2322,6 +2319,68 @@
       g.lineWidth = Math.max(1, r * 0.055);
       g.beginPath();
       g.arc(0, 0, r * 0.28, 0, Math.PI * 2);
+      g.stroke();
+    } else if (type === 'nc') {
+      // Nouvelle-Calédonie (drapeau Kanaky : bleu, rouge, vert + disque solaire jaune & flèche faîtière)
+      const blueNC = locked ? '#3b3b3b' : '#0035ad';
+      const redNC = locked ? '#585858' : '#ed2939';
+      const greenNC = locked ? '#464646' : '#009543';
+      const sunNC = locked ? '#888888' : '#ffd200';
+      const inkNC = locked ? '#1c1c1c' : '#111115';
+
+      const third = (r * 2) / 3;
+      g.fillStyle = blueNC;
+      g.fillRect(-r, -r, r * 2, third + 0.4);
+
+      g.fillStyle = redNC;
+      g.fillRect(-r, -r + third, r * 2, third + 0.4);
+
+      g.fillStyle = greenNC;
+      g.fillRect(-r, -r + third * 2, r * 2, third + 0.4);
+
+      // Disque jaune cerclé de noir légèrement décalé à gauche (comme sur le drapeau officiel)
+      const sx = -r * 0.16;
+      const sy = 0;
+      const sr = r * 0.46;
+
+      g.fillStyle = sunNC;
+      g.beginPath();
+      g.arc(sx, sy, sr, 0, Math.PI * 2);
+      g.fill();
+
+      g.strokeStyle = inkNC;
+      g.lineWidth = Math.max(1.1, r * 0.075);
+      g.stroke();
+
+      // Flèche faîtière noire stylisée à l'intérieur du disque solaire
+      g.strokeStyle = inkNC;
+      g.lineCap = 'round';
+      g.lineWidth = Math.max(1.1, r * 0.08);
+      g.beginPath();
+      g.moveTo(sx, sy - sr * 0.85);
+      g.lineTo(sx, sy + sr * 0.88);
+      g.stroke();
+
+      // Traverses et forme du toutoute / flèche faîtière
+      g.fillStyle = inkNC;
+      g.beginPath();
+      g.moveTo(sx, sy - sr * 0.86);
+      g.lineTo(sx - sr * 0.22, sy - sr * 0.46);
+      g.lineTo(sx + sr * 0.22, sy - sr * 0.46);
+      g.closePath();
+      g.fill();
+
+      g.beginPath();
+      g.arc(sx, sy - sr * 0.12, sr * 0.20, 0, Math.PI * 2);
+      g.arc(sx, sy + sr * 0.30, sr * 0.24, 0, Math.PI * 2);
+      g.fill();
+
+      g.lineWidth = Math.max(1, r * 0.065);
+      g.beginPath();
+      g.moveTo(sx - sr * 0.36, sy - sr * 0.30);
+      g.lineTo(sx + sr * 0.36, sy - sr * 0.30);
+      g.moveTo(sx - sr * 0.42, sy + sr * 0.62);
+      g.quadraticCurveTo(sx, sy + sr * 0.48, sx + sr * 0.42, sy + sr * 0.62);
       g.stroke();
     }
 
@@ -2400,7 +2459,7 @@
       return;
     }
 
-    if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'pologne' || sk.id === 'bretagne' || sk.id === 'rennes') {
+    if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'pologne' || sk.id === 'bretagne' || sk.id === 'rennes' || sk.id === 'nc') {
       drawSpecialBallSurface(x, y - r * 0.3, r, ball.rot * 0.45 + ball.spin * 0.5, sk.id, false);
       return;
     }
@@ -2777,7 +2836,7 @@
       txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 346, 6.5, '#fffb', 'center', false);
     }
 
-    // Section Boules rangée sur 2 lignes de 5 boules
+    // Section Boules rangée sur 2 lignes (6 + 5)
     const activeSkin = SKINS[stats.skin] || SKINS[0];
     g.fillStyle = 'rgba(255, 255, 255, 0.04)';
     g.fillRect(20, 375, W - 40, 182);
@@ -2788,13 +2847,13 @@
     txt('BOULES ARCADE', W / 2, 393, 7.8, '#0f8', 'center', false);
     txt('SELECTION : ' + activeSkin.name, W / 2, 408, 6.4, activeSkin.glow || '#ff0', 'center', false);
 
-    const row1 = SKINS.slice(0, 5);
-    const row2 = SKINS.slice(5, 10);
+    const row1 = SKINS.slice(0, 6);
+    const row2 = SKINS.slice(6);
 
     const drawSkinRow = (list, startIndex, rowY) => {
       const count = list.length;
-      const gap = 8;
-      const panelInnerW = W - 56;
+      const gap = 6;
+      const panelInnerW = W - 52;
       const boxW = Math.floor((panelInnerW - gap * (count - 1)) / count);
       const boxH = 54;
       const rowStartX = Math.floor((W - (boxW * count + gap * (count - 1))) / 2);
@@ -2822,7 +2881,7 @@
 
         if (sk.id === 'ylazia') {
           drawYlaziaSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, !unlocked);
-        } else if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'pologne' || sk.id === 'bretagne' || sk.id === 'rennes') {
+        } else if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'pologne' || sk.id === 'bretagne' || sk.id === 'rennes' || sk.id === 'nc') {
           drawSpecialBallSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, sk.id, !unlocked);
         } else {
           const gr = g.createRadialGradient(cx - 3.5, cy - 3.5, 1, cx, cy, r);
@@ -2836,12 +2895,12 @@
         }
 
         const labelTxt = unlocked ? (sk.label || sk.name) : sk.req + 'X';
-        txt(labelTxt, cx, rowY + 45, 5.3, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
+        txt(labelTxt, cx, rowY + 45, 5.1, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
       });
     };
 
     drawSkinRow(row1, 0, 419);
-    drawSkinRow(row2, 5, 485);
+    drawSkinRow(row2, 6, 485);
 
     const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
     btn(90, 573, 300, 48, mainLabel, Math.floor(tk / 28) % 2 === 0, () => {
