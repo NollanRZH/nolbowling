@@ -88,10 +88,10 @@
     <div id="crt"></div>
     <input id="nickInput" class="arcade-input" type="text" maxlength="10" placeholder="TON PSEUDO"
       autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done"
-      style="top:26.5%;width:72%;max-width:260px;height:44px;border:2px solid #ff00ff;color:#00ffff;font-size:14px;box-shadow:0 0 18px rgba(255,0,255,0.45);">
+      style="top:21.5%;width:72%;max-width:260px;height:42px;border:2px solid #ff00ff;color:#00ffff;font-size:13px;box-shadow:0 0 18px rgba(255,0,255,0.45);">
     <input id="roomInput" class="arcade-input" type="text" maxlength="4" placeholder="CODE"
       autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go"
-      style="top:46%;width:52%;max-width:190px;height:48px;border:2px solid #00ffff;color:#ffff00;font-size:18px;box-shadow:0 0 20px rgba(0,255,255,0.45);">
+      style="top:46%;width:52%;max-width:190px;height:46px;border:2px solid #00ffff;color:#ffff00;font-size:18px;box-shadow:0 0 20px rgba(0,255,255,0.45);">
   </div>
 </div>
 <script>
@@ -144,6 +144,8 @@
     { n: 'CYBER PRO', desc: 'IA EXPERTE • POCHE 1-3 & EFFET', errPos: 5, errAng: 0.022, errPow: 0.035, spinSkill: 0.92 }
   ];
 
+  const PLAYER_COLORS = ['#00ffff', '#ff00ff', '#ffff00', '#00ff88'];
+
   let stats = {
     best: 0,
     strikes: 0,
@@ -174,12 +176,14 @@
   }));
 
   /* ==========================================================================
-     2. ETAT DU JEU, PSEUDOS (FIX MOBILE), BOT & RESEAU P2P
+     2. ETAT DU JEU, PSEUDOS, SALONS PUBLICS (1-4 JOUEURS) & RESEAU MESH P2P
      ========================================================================== */
   let st = 'menu';
   let tk = 0;
   let mode = 0, np = 1, mrow = 0;
   let playType = 'solo';
+  let localPlayers = 2; // 2, 3 ou 4 joueurs en local
+  let onlineCapacity = 2; // 1, 2, 3 ou 4 joueurs en ligne
   let botDiff = 1;
 
   function cleanNickChars(raw) {
@@ -197,18 +201,16 @@
   }
 
   let myNick = sanitizeNick(stats.nick, 'JOUEUR');
-  let oppNick = 'AMI';
   let onlineCount = 1;
   let presencePeer = null;
   const presenceConns = new Map();
   const knownPeers = new Set();
+  const publicRooms = new Map(); // code -> { code, host, count, max, mode, ts }
   const mySessionId = 'nbu-' + Math.random().toString(36).slice(2, 10);
 
   const nickInputEl = document.getElementById('nickInput');
   const roomInputEl = document.getElementById('roomInput');
 
-  // FIX DU BUG MOBILE : on laisse le champ vide pendant la saisie !
-  // On ne remet le nom par defaut qu'au blur ou au lancement si le champ est reste vide.
   nickInputEl.value = stats.nick ? myNick : '';
   nickInputEl.addEventListener('input', () => {
     const filtered = cleanNickChars(nickInputEl.value);
@@ -253,17 +255,59 @@
   let copiedToast = 0;
   let botPlan = null;
 
-  let peer = null, conn = null;
-  let netRole = null;
+  // Etat reseau P2P multi-joueurs (1 a 4 joueurs)
+  let peer = null;
+  const hostConns = []; // connexions cote hote (index = slot - 1)
+  let guestConn = null; // connexion cote invite vers l'hote
+  let mySlot = 0; // index du joueur local dans la partie (0 = hote, 1..3 = invites)
+  let netRole = null; // 'host' | 'guest'
   let netStatus = 'PRET A CONNECTER';
   let roomCode = '';
-  let onlineSub = 'choice';
+  let onlineSub = 'lobby'; // 'lobby' | 'hosting' | 'joining'
+  let lobbyScroll = 0;
   let netSyncTimer = 0;
+  let roomRoster = []; // [{ nick, slot, isBot }]
 
   let sweeper = { active: false, t: 0, dur: 52, resetRack: false, cleared: false };
 
   function haptic(pattern = 15) {
     try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+  }
+
+  /* --------------------------------------------------------------------------
+     Reseau de decouverte de salons publics & presence via Hubs PeerJS
+     -------------------------------------------------------------------------- */
+  function broadcastRoomUpdate(roomObj) {
+    if (!roomObj || !roomObj.code) return;
+    publicRooms.set(roomObj.code, { ...roomObj, ts: Date.now() });
+    presenceConns.forEach(c => {
+      if (c && c.open) {
+        try { c.send({ type: 'room_pub', room: roomObj }); } catch (e) {}
+      }
+    });
+  }
+
+  function broadcastRoomClose(code) {
+    if (!code) return;
+    publicRooms.delete(code);
+    presenceConns.forEach(c => {
+      if (c && c.open) {
+        try { c.send({ type: 'room_del', code }); } catch (e) {}
+      }
+    });
+  }
+
+  function getActivePublicRooms() {
+    const now = Date.now();
+    const list = [];
+    publicRooms.forEach((r, code) => {
+      if (now - r.ts > 16000) {
+        publicRooms.delete(code);
+      } else if (r.count < r.max) {
+        list.push(r);
+      }
+    });
+    return list;
   }
 
   function initSitePresence() {
@@ -278,7 +322,12 @@
     function sendPresence(c) {
       if (c && c.open) {
         try {
-          c.send({ type: 'presence', from: mySessionId, list: Array.from(knownPeers) });
+          c.send({
+            type: 'presence',
+            from: mySessionId,
+            list: Array.from(knownPeers),
+            rooms: getActivePublicRooms()
+          });
         } catch (e) {}
       }
     }
@@ -293,20 +342,62 @@
       presenceConns.set(pid, c);
       c.on('open', () => {
         sendPresence(c);
+        if (netRole === 'host' && onlineSub === 'hosting' && roomCode) {
+          broadcastRoomUpdate({
+            code: roomCode,
+            host: myNick,
+            count: roomRoster.length,
+            max: onlineCapacity,
+            mode
+          });
+        }
         broadcastPresence();
       });
       c.on('data', d => {
         if (!d || typeof d !== 'object') return;
-        if (d.type === 'presence' && Array.isArray(d.list)) {
+        if (d.type === 'presence') {
           let changed = false;
-          d.list.forEach(id => {
-            if (!knownPeers.has(id)) {
-              knownPeers.add(id);
-              changed = true;
-            }
-          });
+          if (Array.isArray(d.list)) {
+            d.list.forEach(id => {
+              if (!knownPeers.has(id)) {
+                knownPeers.add(id);
+                changed = true;
+              }
+            });
+          }
+          if (Array.isArray(d.rooms)) {
+            d.rooms.forEach(r => {
+              if (r && r.code && r.count < r.max) {
+                const existing = publicRooms.get(r.code);
+                if (!existing || (r.ts || 0) >= (existing.ts || 0)) {
+                  publicRooms.set(r.code, { ...r, ts: Date.now() });
+                }
+              }
+            });
+          }
           updateCount();
           if (changed) broadcastPresence();
+        } else if (d.type === 'room_pub' && d.room && d.room.code) {
+          const r = d.room;
+          const prev = publicRooms.get(r.code);
+          const isNew = !prev || prev.count !== r.count;
+          publicRooms.set(r.code, { ...r, ts: Date.now() });
+          if (isNew) {
+            presenceConns.forEach(other => {
+              if (other !== c && other.open) {
+                try { other.send({ type: 'room_pub', room: r }); } catch (e) {}
+              }
+            });
+          }
+        } else if (d.type === 'room_del' && d.code) {
+          if (publicRooms.has(d.code)) {
+            publicRooms.delete(d.code);
+            presenceConns.forEach(other => {
+              if (other !== c && other.open) {
+                try { other.send({ type: 'room_del', code: d.code }); } catch (e) {}
+              }
+            });
+          }
         } else if (d.type === 'bye' && d.from) {
           knownPeers.delete(d.from);
           updateCount();
@@ -370,9 +461,20 @@
         connectToHubs(-1);
         broadcastPresence();
       }
-    }, 6000);
+      // Heartbeat du salon heberge pour qu'il reste visible dans la liste publique
+      if (netRole === 'host' && onlineSub === 'hosting' && roomCode && roomRoster.length < onlineCapacity) {
+        broadcastRoomUpdate({
+          code: roomCode,
+          host: myNick,
+          count: roomRoster.length,
+          max: onlineCapacity,
+          mode
+        });
+      }
+    }, 4500);
 
     window.addEventListener('beforeunload', () => {
+      if (netRole === 'host' && roomCode) broadcastRoomClose(roomCode);
       presenceConns.forEach(c => {
         try { c.send({ type: 'bye', from: mySessionId }); c.close(); } catch (e) {}
       });
@@ -380,7 +482,7 @@
     });
   }
 
-  setTimeout(initSitePresence, 300);
+  setTimeout(initSitePresence, 250);
 
   /* ==========================================================================
      3. AUDIO SYNTHWAVE (WEB AUDIO API)
@@ -549,26 +651,53 @@
   const total = p => calc(p).tot + p.bonus;
 
   /* ==========================================================================
-     5. MULTIJOUEUR P2P, PHYSIQUE EXIGEANTE & DEROULEMENT
+     5. MULTIJOUEUR P2P (1 A 4 JOUEURS), PHYSIQUE & DEROULEMENT
      ========================================================================== */
-  const isBotTurn = () => playType === 'bot' && cp === 1;
-  const isMyNetTurn = () => playType !== 'online' || (netRole === 'host' && cp === 0) || (netRole === 'guest' && cp === 1);
+  const isBotTurn = () => {
+    if (playType === 'bot' && cp === 1) return true;
+    if (playType === 'online' && roomRoster[cp] && roomRoster[cp].isBot) return true;
+    return false;
+  };
+  const isMyNetTurn = () => {
+    if (playType !== 'online') return true;
+    if (roomRoster[cp] && roomRoster[cp].isBot) return netRole === 'host';
+    return cp === mySlot;
+  };
   const canLocalControl = () => !isBotTurn() && isMyNetTurn();
 
+  function netBroadcastFromHost(data, excludeConn = null) {
+    for (let i = 0; i < hostConns.length; i++) {
+      const c = hostConns[i];
+      if (c && c.open && c !== excludeConn) {
+        try { c.send(data); } catch (e) {}
+      }
+    }
+  }
+
   function netSend(data) {
-    if (playType === 'online' && conn && conn.open) {
-      try { conn.send(data); } catch (e) {}
+    if (playType !== 'online') return;
+    if (netRole === 'host') {
+      netBroadcastFromHost(data);
+    } else if (netRole === 'guest' && guestConn && guestConn.open) {
+      try { guestConn.send(data); } catch (e) {}
     }
   }
 
   function closeNetwork() {
     nickInputEl.style.display = 'none';
     roomInputEl.style.display = 'none';
-    if (conn) { try { conn.close(); } catch (e) {} conn = null; }
+    if (netRole === 'host' && roomCode) broadcastRoomClose(roomCode);
+    while (hostConns.length) {
+      const c = hostConns.pop();
+      try { c.close(); } catch (e) {}
+    }
+    if (guestConn) { try { guestConn.close(); } catch (e) {} guestConn = null; }
     if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
     netRole = null;
+    mySlot = 0;
     roomCode = '';
-    onlineSub = 'choice';
+    roomRoster = [];
+    onlineSub = 'lobby';
   }
 
   function genCode() {
@@ -578,45 +707,137 @@
     return s;
   }
 
-  function setupConn(connection) {
-    conn = connection;
-    conn.on('open', () => {
-      netStatus = 'CONNECTE ! LANCEMENT...';
+  function syncLobbyRoster() {
+    // Re-indexe les slots proprement
+    roomRoster.forEach((p, idx) => { p.slot = idx; });
+    netBroadcastFromHost({
+      type: 'lobby_state',
+      roster: roomRoster,
+      max: onlineCapacity,
+      mode
+    });
+    if (roomRoster.length >= onlineCapacity) {
+      broadcastRoomClose(roomCode);
+      setTimeout(() => {
+        if (st === 'online' && onlineSub === 'hosting') {
+          launchOnlineMatch();
+        }
+      }, 650);
+    } else {
+      broadcastRoomUpdate({
+        code: roomCode,
+        host: myNick,
+        count: roomRoster.length,
+        max: onlineCapacity,
+        mode
+      });
+    }
+  }
+
+  function launchOnlineMatch() {
+    if (netRole !== 'host') return;
+    broadcastRoomClose(roomCode);
+    // Complete avec des bots si l'hote a clique "DEMARRER MAINTENANT" avant que le salon soit plein
+    while (roomRoster.length < onlineCapacity && roomRoster.length > 1) {
+      roomRoster.push({
+        nick: 'BOT ' + roomRoster.length,
+        slot: roomRoster.length,
+        isBot: true
+      });
+    }
+    roomRoster.forEach((p, idx) => { p.slot = idx; });
+    netBroadcastFromHost({
+      type: 'start',
+      mode,
+      roster: roomRoster
+    });
+    startGame(true);
+  }
+
+  function bindHostClient(c) {
+    c.on('open', () => {
+      if (st !== 'online' || onlineSub !== 'hosting' || roomRoster.length >= onlineCapacity) {
+        try { c.send({ type: 'full' }); c.close(); } catch (e) {}
+        return;
+      }
+      hostConns.push(c);
+      const slotIdx = roomRoster.length;
+      roomRoster.push({ nick: 'JOUEUR ' + (slotIdx + 1), slot: slotIdx, isBot: false, peerId: c.peer });
+      arp([523.25, 659.25], 55);
+      haptic(20);
+      syncLobbyRoster();
+    });
+
+    c.on('data', d => {
+      if (!d || typeof d !== 'object') return;
+      if (d.type === 'hello') {
+        const item = roomRoster.find(r => r.peerId === c.peer);
+        if (item && d.nick) {
+          item.nick = sanitizeNick(d.nick, 'JOUEUR');
+          syncLobbyRoster();
+        }
+      } else {
+        // L'hote applique l'action et la relaie a tous les autres invites
+        netBroadcastFromHost(d, c);
+        handleNetData(d);
+      }
+    });
+
+    c.on('close', () => {
+      const cIdx = hostConns.indexOf(c);
+      if (cIdx !== -1) hostConns.splice(cIdx, 1);
+      if (st === 'online' && onlineSub === 'hosting') {
+        const rIdx = roomRoster.findIndex(r => r.peerId === c.peer);
+        if (rIdx !== -1) roomRoster.splice(rIdx, 1);
+        syncLobbyRoster();
+      } else if (playType === 'online' && st !== 'menu' && st !== 'over') {
+        say('UN JOUEUR A QUITTE', '#f35', 140, 'RETOUR AU MENU');
+        setTimeout(() => { closeNetwork(); st = 'menu'; }, 1800);
+      }
+    });
+  }
+
+  function setupGuestConn(connection) {
+    guestConn = connection;
+    guestConn.on('open', () => {
+      netStatus = 'CONNECTE AU SALON !';
       arp([523.25, 659.25, 783.99], 60);
       haptic([20, 40, 20]);
       netSend({ type: 'hello', nick: myNick });
-      if (netRole === 'host') {
-        netSend({ type: 'start', mode, nick: myNick, seed: Date.now() });
-        startGame(true);
-      }
     });
-    conn.on('data', d => handleNetData(d));
-    conn.on('close', () => {
+    guestConn.on('data', d => handleNetData(d));
+    guestConn.on('close', () => {
       if (playType === 'online' && st !== 'menu' && st !== 'over') {
-        say('ADVERSAIRE DECONNECTE', '#f35', 140, 'RETOUR AU MENU');
+        say('HOTE DECONNECTE', '#f35', 140, 'RETOUR AU MENU');
         setTimeout(() => { closeNetwork(); st = 'menu'; }, 1800);
       }
       netStatus = 'CONNEXION FERMEE';
     });
-    conn.on('error', () => {
-      netStatus = 'ERREUR RESEAU';
+    guestConn.on('error', () => {
+      netStatus = 'SALON INTROUVABLE';
     });
   }
 
   function handleNetData(d) {
     if (!d || typeof d !== 'object') return;
-    if (d.type === 'hello') {
-      if (d.nick) oppNick = sanitizeNick(d.nick, 'AMI');
-      if (netRole === 'host' && st === 'online') {
-        netSend({ type: 'start', mode, nick: myNick, seed: Date.now() });
-        startGame(true);
-      }
+    if (d.type === 'full') {
+      netStatus = 'SALON DEJA COMPLET !';
+      onlineSub = 'lobby';
+      tone(150, 0.25, 'sawtooth');
+    } else if (d.type === 'lobby_state') {
+      roomRoster = Array.isArray(d.roster) ? d.roster : [];
+      onlineCapacity = d.max || onlineCapacity;
+      if (typeof d.mode === 'number') mode = d.mode;
+      const me = roomRoster.find(r => r.peerId === (peer && peer.id));
+      if (me) mySlot = me.slot;
+      netStatus = `SALON (${roomRoster.length}/${onlineCapacity}) - EN ATTENTE...`;
     } else if (d.type === 'start') {
-      if (d.nick) oppNick = sanitizeNick(d.nick, 'AMI');
+      roomRoster = Array.isArray(d.roster) ? d.roster : [];
+      const me = roomRoster.find(r => r.peerId === (peer && peer.id));
+      if (me) mySlot = me.slot;
       mode = typeof d.mode === 'number' ? d.mode : mode;
       roomInputEl.style.display = 'none';
       nickInputEl.style.display = 'none';
-      netSend({ type: 'hello', nick: myNick });
       startGame(true);
     } else if (d.type === 'aim') {
       if (!isMyNetTurn() && st === 'aim') {
@@ -682,21 +903,38 @@
   function hostRoom() {
     commitNickField('JOUEUR 1');
     closeNetwork();
+    // Si 1 seul joueur choisi en ligne, on lance directement la partie solo connectee !
+    if (onlineCapacity === 1) {
+      netRole = 'host';
+      mySlot = 0;
+      roomRoster = [{ nick: myNick, slot: 0, isBot: false }];
+      startGame(true);
+      return;
+    }
     if (typeof Peer === 'undefined') {
       netStatus = 'PEERJS INDISPONIBLE';
       return;
     }
     netRole = 'host';
+    mySlot = 0;
     onlineSub = 'hosting';
     roomCode = genCode();
+    roomRoster = [{ nick: myNick, slot: 0, isBot: false }];
     netStatus = 'CREATION DU SALON...';
     try {
       peer = new Peer('nolbowl-' + roomCode);
       peer.on('open', () => {
-        netStatus = 'EN ATTENTE D UN AMI...';
+        netStatus = 'EN ATTENTE DES JOUEURS...';
+        broadcastRoomUpdate({
+          code: roomCode,
+          host: myNick,
+          count: 1,
+          max: onlineCapacity,
+          mode
+        });
       });
       peer.on('connection', c => {
-        setupConn(c);
+        bindHostClient(c);
       });
       peer.on('error', err => {
         if (err && err.type === 'unavailable-id') {
@@ -721,33 +959,41 @@
     setTimeout(() => roomInputEl.focus(), 50);
   }
 
-  function joinRoomSubmit() {
-    const code = roomInputEl.value.trim().toUpperCase();
-    if (code.length !== 4) {
+  function connectToRoomCode(code) {
+    const cleanCode = String(code || '').trim().toUpperCase();
+    if (cleanCode.length !== 4) {
       netStatus = 'CODE INVALIDE (4 CAR.)';
       tone(150, 0.2, 'sawtooth');
       return;
     }
+    commitNickField('JOUEUR');
+    closeNetwork();
     if (typeof Peer === 'undefined') {
       netStatus = 'PEERJS INDISPONIBLE';
       return;
     }
-    roomInputEl.style.display = 'none';
-    roomCode = code;
-    netStatus = 'CONNEXION A ' + code + '...';
+    netRole = 'guest';
+    onlineSub = 'joining';
+    roomCode = cleanCode;
+    netStatus = 'CONNEXION A ' + cleanCode + '...';
     try {
       peer = new Peer();
       peer.on('open', () => {
-        const c = peer.connect('nolbowl-' + code, { reliable: true });
-        setupConn(c);
+        const c = peer.connect('nolbowl-' + cleanCode, { reliable: true });
+        setupGuestConn(c);
       });
       peer.on('error', () => {
         netStatus = 'SALON INTROUVABLE';
+        publicRooms.delete(cleanCode);
         tone(150, 0.25, 'sawtooth');
       });
     } catch (e) {
       netStatus = 'RESEAU BLOQUE';
     }
+  }
+
+  function joinRoomSubmit() {
+    connectToRoomCode(roomInputEl.value);
   }
 
   function rack() {
@@ -820,7 +1066,7 @@
     settleT = 0;
     swipeMode = false;
     newBall();
-    if (isBotTurn()) {
+    if (isBotTurn() && (playType !== 'online' || netRole === 'host')) {
       planBotShot();
     } else {
       botPlan = null;
@@ -866,7 +1112,12 @@
     const m = MODES[mode];
     NF = m.f;
     FIN = NF > 0;
-    np = playType === 'solo' ? 1 : 2;
+
+    if (playType === 'solo') np = 1;
+    else if (playType === 'bot') np = 2;
+    else if (playType === 'local') np = localPlayers;
+    else if (playType === 'online') np = Math.max(1, roomRoster.length || onlineCapacity);
+
     PL = [];
     for (let i = 0; i < np; i++) {
       PL.push({
@@ -942,8 +1193,8 @@
       if (playType === 'online') {
         if (!presencePeer) initSitePresence();
         st = 'online';
-        onlineSub = 'choice';
-        netStatus = 'PRET A CONNECTER';
+        onlineSub = 'lobby';
+        netStatus = 'CHOISIS UN SALON OU CREE LE TIEN';
         nickInputEl.value = stats.nick ? myNick : '';
         nickInputEl.style.display = 'block';
       } else {
@@ -1362,6 +1613,9 @@
             power = botPlan.targetPow;
             launch();
           }
+        }
+        if (playType === 'online' && netRole === 'host' && tk % 3 === 0) {
+          netSend({ type: 'aim', px, aimLock, aimA, power });
         }
       } else if (canLocalControl()) {
         if (aimLock === 0) {
@@ -1871,7 +2125,7 @@
 
   function drawPinRadar() {
     if (st !== 'aim') return;
-    const rx = 420, ry = 102, rw = 52, rh = 56;
+    const rx = 420, ry = 104, rw = 52, rh = 56;
     g.fillStyle = 'rgba(11, 4, 40, 0.82)';
     g.fillRect(rx, ry, rw, rh);
     g.strokeStyle = '#0ff8';
@@ -1893,19 +2147,82 @@
     if (playType === 'solo') return short ? 'SCORE' : 'SCORE FINAL';
     if (playType === 'bot') return idx === 0 ? (short ? 'TOI' : 'JOUEUR (TOI)') : (short ? 'BOT' : 'BOT ' + BOT_LEVELS[botDiff].n);
     if (playType === 'online') {
-      const isMe = (netRole === 'host' && idx === 0) || (netRole === 'guest' && idx === 1);
-      const name = isMe ? myNick : oppNick;
-      return short ? name.slice(0, 6) : name;
+      const entry = roomRoster[idx];
+      if (entry && entry.nick) {
+        return short ? entry.nick.slice(0, 6) : entry.nick;
+      }
+      return short ? 'J' + (idx + 1) : 'JOUEUR ' + (idx + 1);
     }
     return short ? 'J' + (idx + 1) : 'JOUEUR ' + (idx + 1);
   }
 
   function drawBoard() {
+    const boardH = np > 2 ? 96 : 90;
     g.fillStyle = '#0b0428';
-    g.fillRect(0, 0, W, 90);
+    g.fillRect(0, 0, W, boardH);
     const V = FIN ? NF : 6;
     const cw = 400 / V;
     const s0 = FIN ? 0 : Math.max(0, fi - V + 2);
+
+    // En 3 ou 4 joueurs, on affiche une barre compacte des scores en haut + la feuille complete du joueur actif en dessous
+    if (np > 2) {
+      const slotW = (W - 8) / np;
+      for (let i = 0; i < np; i++) {
+        const p = PL[i];
+        const a = calc(p);
+        const on = i === cp;
+        const col = PLAYER_COLORS[i % PLAYER_COLORS.length];
+        const sx = 4 + i * slotW;
+        g.fillStyle = on ? col + '30' : '#ffffff0a';
+        g.fillRect(sx + 2, 4, slotW - 4, 24);
+        g.strokeStyle = on ? '#ff0' : col + '77';
+        g.lineWidth = on ? 2 : 1;
+        g.strokeRect(sx + 2, 4, slotW - 4, 24);
+        txt(playerLabel(i, true), sx + 6, 15, 6.2, on ? '#ff0' : col, 'left', false);
+        txt(String(a.tot + p.bonus), sx + slotW - 6, 23, 7, '#fff', 'right', false);
+      }
+
+      const p = PL[cp];
+      const a = calc(p);
+      const col = PLAYER_COLORS[cp % PLAYER_COLORS.length];
+      const y = 33, rh = 56;
+
+      txt(playerLabel(cp, true), 6, y + 14, 7.5, '#ff0', 'left', false);
+      txt(String(a.tot + p.bonus).padStart(5, '0'), 6, y + rh - 8, 9, '#fff', 'left', false);
+
+      for (let k = 0; k < V; k++) {
+        const idx = s0 + k;
+        const x = 72 + k * cw;
+        const c = a.fr[idx];
+        const cur = idx === fi && st !== 'over';
+
+        g.fillStyle = cur ? '#ffffff28' : '#ffffff0a';
+        g.fillRect(x + 1, y, cw - 2, rh);
+        g.strokeStyle = cur ? '#ff0' : col + '66';
+        g.lineWidth = cur ? 2 : 1;
+        g.strokeRect(x + 1, y, cw - 2, rh);
+
+        txt(String(idx + 1), x + 4, y + 9, 6, '#fff6', 'left', false);
+
+        const m = c ? c.m : [];
+        const bw = Math.min(16, cw / 3.2);
+        const mh = Math.round(rh * 0.4);
+        m.forEach((v, j) => {
+          const bx = x + cw - 3 - (m.length - j) * bw;
+          g.strokeStyle = '#fff5';
+          g.lineWidth = 1;
+          g.strokeRect(bx, y + 3, bw, mh);
+          txt(v, bx + bw / 2, y + 3 + mh / 2 + 4, 8, v === 'X' ? '#f0f' : (v === '/' ? '#0ff' : '#fff'), 'center', false);
+        });
+
+        if (c && c.t !== null) {
+          txt(String(c.t), x + cw / 2, y + rh - 5, 9.5, '#ff0', 'center', false);
+        }
+      }
+      line([0, boardH], [W, boardH], '#0ff', 3, 6);
+      return;
+    }
+
     const rh = np > 1 ? 38 : 60;
     const y0 = np > 1 ? 5 : 14;
 
@@ -1966,9 +2283,10 @@
     if (st === 'aim' || st === 'roll') {
       const lvTxt = !FIN ? ' • NIV ' + level : '';
       const who = np > 1 ? playerLabel(cp, true) + ' • ' : '';
+      const curCol = PLAYER_COLORS[cp % PLAYER_COLORS.length];
       txt(
         who + 'FRAME ' + (fi + 1) + (FIN ? '/' + NF : '') + ' • LANCER ' + (fr.length + 1) + lvTxt,
-        W / 2, 754, 7.5, np > 1 && cp ? '#f0f' : '#0ff', 'center', false
+        W / 2, 754, 7.5, np > 1 ? curCol : '#0ff', 'center', false
       );
     }
 
@@ -1993,10 +2311,10 @@
       g.strokeRect(40, 714, 400, 18);
 
       if (isBotTurn()) {
-        txt('TOUR DU BOT (' + BOT_LEVELS[botDiff].n + ')...', W / 2, 775, 8, '#f0f');
+        txt('TOUR DU BOT (' + playerLabel(cp, true) + ')...', W / 2, 775, 8, '#f0f');
         txt('ANALYSE DE LA PISTE EN COURS', W / 2, 792, 7, '#ff0');
       } else if (!isMyNetTurn()) {
-        txt('TOUR DE ' + oppNick + '...', W / 2, 775, 8, '#f0f');
+        txt('TOUR DE ' + playerLabel(cp, false) + '...', W / 2, 775, 8, '#f0f');
         txt('OBSERVE SON LANCER EN DIRECT', W / 2, 792, 7, '#0ff');
       } else {
         txt(aimLock ? 'CLIC / TAP : LANCER' : 'GLISSE : POSITION • TAP : ANGLE', W / 2, 775, 7.2, '#fff');
@@ -2018,7 +2336,7 @@
       if (isBotTurn()) {
         txt('LANCER DU BOT EN COURS...', W / 2, 778, 8, '#f0f');
       } else if (!isMyNetTurn()) {
-        txt('LANCER DE ' + oppNick + '...', W / 2, 778, 8, '#f0f');
+        txt('LANCER DE ' + playerLabel(cp, false) + '...', W / 2, 778, 8, '#f0f');
       } else {
         txt(gutter ? 'GOUTTIERE...' : 'EFFET EN VOL : < > OU GLISSE', W / 2, 778, 8, gutter ? '#f35' : '#0ff');
       }
@@ -2036,16 +2354,20 @@
     overlay(0.86);
 
     const pulse = 0.5 + 0.5 * Math.sin(tk * 0.12);
+    const activeRoomsCount = getActivePublicRooms().length;
     g.fillStyle = 'rgba(0, 255, 136, 0.12)';
-    g.fillRect(110, 14, 260, 24);
+    g.fillRect(60, 14, 360, 24);
     g.strokeStyle = '#0f88';
     g.lineWidth = 1.5;
-    g.strokeRect(110, 14, 260, 24);
+    g.strokeRect(60, 14, 360, 24);
     g.fillStyle = `rgba(0, 255, 136, ${(0.5 + pulse * 0.5).toFixed(2)})`;
     g.beginPath();
-    g.arc(126, 26, 4.5, 0, 7);
+    g.arc(76, 26, 4.5, 0, 7);
     g.fill();
-    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS EN LIGNE' : ' JOUEUR EN LIGNE'), 248, 30, 7.5, '#0f8', 'center', false);
+    const statusBanner = activeRoomsCount > 0
+      ? `${onlineCount} EN LIGNE • ${activeRoomsCount} SALON${activeRoomsCount > 1 ? 'S' : ''} DISPO`
+      : `${onlineCount} ${onlineCount > 1 ? 'JOUEURS EN LIGNE' : 'JOUEUR EN LIGNE'}`;
+    txt(statusBanner, 248, 30, 7, '#0f8', 'center', false);
 
     const y = Math.sin(tk / 20) * 4;
     txt('NOL', W / 2, 114 + y, 56, '#0ff', 'center', true);
@@ -2066,13 +2388,16 @@
     const P_TYPES = [
       ['SOLO', 'solo'],
       ['VS BOT', 'bot'],
-      ['1V1 LOCAL', 'local'],
+      ['LOCAL', 'local'],
       ['EN LIGNE', 'online']
     ];
     P_TYPES.forEach(([label, val], i) => {
       btn(22 + i * 111, 356, 103, 36, label, playType === val, () => {
         playType = val;
-        np = val === 'solo' ? 1 : 2;
+        if (val === 'solo') np = 1;
+        else if (val === 'bot') np = 2;
+        else if (val === 'local') np = localPlayers;
+        else np = onlineCapacity;
         mrow = 1;
         tone(520, 0.06);
       }, 7.2, val === 'online' ? '#0f8' : '#f0f');
@@ -2086,11 +2411,18 @@
         }, 7.2, '#ff0');
       });
       txt(BOT_LEVELS[botDiff].desc, W / 2, 448, 6.5, '#ff0', 'center', false);
-    } else if (playType === 'online') {
-      txt('MULTIJOUEUR DIRECT P2P (SANS SERVEUR)', W / 2, 422, 6.8, '#0f8', 'center', false);
-      txt('CHOISIS TON PSEUDO & REJOINS UN AMI', W / 2, 440, 6.5, '#fffb', 'center', false);
     } else if (playType === 'local') {
-      txt('2 JOUEURS SUR LE MEME ECRAN (TOUR A TOUR)', W / 2, 428, 6.8, '#fffb', 'center', false);
+      [2, 3, 4].forEach((cnt, i) => {
+        btn(54 + i * 126, 402, 118, 30, cnt + ' JOUEURS', localPlayers === cnt, () => {
+          localPlayers = cnt;
+          np = cnt;
+          tone(600, 0.06);
+        }, 7.2, '#ff0');
+      });
+      txt('TOUR A TOUR SUR LE MEME ECRAN (' + localPlayers + ' JOUEURS)', W / 2, 448, 6.5, '#fffb', 'center', false);
+    } else if (playType === 'online') {
+      txt('SALONS PUBLICS OU PRIVES • 1 A 4 JOUEURS', W / 2, 422, 6.8, '#0f8', 'center', false);
+      txt('REJOINS UN SALON DISPO OU CREE LE TIEN', W / 2, 440, 6.5, '#fffb', 'center', false);
     } else {
       txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 428, 6.8, '#fffb', 'center', false);
     }
@@ -2124,13 +2456,13 @@
       txt(unlocked ? sk.name.split(' ')[1] : sk.req + 'X', cx, 531, 6.5, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
     });
 
-    const mainLabel = playType === 'online' ? 'SALON EN LIGNE' : 'JOUER';
+    const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
     btn(90, 558, 300, 52, mainLabel, Math.floor(tk / 28) % 2 === 0, () => {
       if (playType === 'online') {
         if (!presencePeer) initSitePresence();
         st = 'online';
-        onlineSub = 'choice';
-        netStatus = 'PRET A CONNECTER';
+        onlineSub = 'lobby';
+        netStatus = 'CHOISIS UN SALON OU CREE LE TIEN';
         nickInputEl.value = stats.nick ? myNick : '';
         nickInputEl.style.display = 'block';
         tone(620, 0.08);
@@ -2170,33 +2502,92 @@
   }
 
   function drawOnline() {
-    overlay(0.92);
-    txt('MULTIJOUEUR P2P', W / 2, 105, 20, '#0f8', 'center', true);
-    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS ACTIFS SUR LE SITE' : ' JOUEUR ACTIF SUR LE SITE'), W / 2, 134, 7.5, '#0ff', 'center', false);
+    overlay(0.93);
+    txt('MULTIJOUEUR EN LIGNE', W / 2, 72, 17, '#0f8', 'center', true);
+    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS ACTIFS SUR LE SITE' : ' JOUEUR ACTIF SUR LE SITE'), W / 2, 98, 7, '#0ff', 'center', false);
 
-    txt('TON PSEUDO (10 CAR. MAX) :', W / 2, 174, 8, '#f0f', 'center', false);
+    txt('TON PSEUDO :', W / 2, 134, 7.5, '#f0f', 'center', false);
 
-    if (onlineSub === 'choice') {
-      txt('MODE SELECTIONNE : ' + MODES[mode].n, W / 2, 272, 8, '#ff0', 'center', false);
-      btn(70, 305, 340, 56, 'CREER UN SALON', true, hostRoom, 12, '#0ff');
-      txt('OBTIENS UN CODE A PARTAGER', W / 2, 378, 7, '#fff9', 'center', false);
+    if (onlineSub === 'lobby') {
+      // Choix du nombre de joueurs (1, 2, 3 ou 4) pour creer un salon
+      txt('CREER UN SALON (' + MODES[mode].n + ') :', W / 2, 224, 7.2, '#ff0', 'center', false);
+      [1, 2, 3, 4].forEach((cnt, i) => {
+        btn(24 + i * 110, 236, 102, 34, cnt + (cnt === 1 ? ' JOUEUR' : ' J.'), onlineCapacity === cnt, () => {
+          onlineCapacity = cnt;
+          tone(540, 0.06);
+        }, 7.2, '#ff0');
+      });
 
-      btn(70, 415, 340, 56, 'REJOINDRE UN SALON', false, openJoinRoom, 12, '#f0f');
-      txt('ENTRE LE CODE DE TON AMI', W / 2, 488, 7, '#fff9', 'center', false);
+      const createLabel = onlineCapacity === 1 ? 'LANCER SOLO EN LIGNE' : `CREER SALON (${onlineCapacity} JOUEURS)`;
+      btn(40, 280, 400, 44, createLabel, true, hostRoom, 10, '#0ff');
+
+      // Liste des salons publics disponibles
+      g.fillStyle = '#ffffff0a';
+      g.fillRect(24, 342, W - 48, 250);
+      g.strokeStyle = '#0f86';
+      g.lineWidth = 1.5;
+      g.strokeRect(24, 342, W - 48, 250);
+
+      const rooms = getActivePublicRooms();
+      txt(`SALONS DISPONIBLES (${rooms.length})`, W / 2, 364, 8, '#0f8', 'center', false);
+
+      if (rooms.length === 0) {
+        txt('AUCUN SALON PUBLIC POUR L INSTANT', W / 2, 445, 7, '#fff8', 'center', false);
+        txt('CREE UN SALON CI-DESSUS POUR ETRE', W / 2, 470, 6.5, '#0ff9', 'center', false);
+        txt('VISIBLE PAR LES AUTRES JOUEURS !', W / 2, 488, 6.5, '#0ff9', 'center', false);
+      } else {
+        const visible = rooms.slice(lobbyScroll, lobbyScroll + 3);
+        visible.forEach((r, idx) => {
+          const ry = 380 + idx * 66;
+          const mName = MODES[r.mode] ? MODES[r.mode].n : 'INFINI';
+          g.fillStyle = '#140842';
+          g.fillRect(36, ry, W - 72, 56);
+          g.strokeStyle = '#f0f8';
+          g.lineWidth = 1.5;
+          g.strokeRect(36, ry, W - 72, 56);
+
+          txt(r.host || 'HOTE', 48, ry + 22, 8.5, '#fff', 'left', false);
+          txt(`${mName} • ${r.count}/${r.max} JOUEURS`, 48, ry + 42, 6.5, '#ff0', 'left', false);
+
+          btn(W - 154, ry + 10, 108, 36, 'REJOINDRE', false, () => {
+            nickInputEl.style.display = 'none';
+            connectToRoomCode(r.code);
+          }, 7.2, '#0f8');
+        });
+      }
+
+      btn(40, 606, 400, 40, 'REJOINDRE AVEC UN CODE', false, openJoinRoom, 8.5, '#f0f');
     } else if (onlineSub === 'hosting') {
-      txt('PARTAGE CE CODE A TON AMI :', W / 2, 275, 8.5, '#fff', 'center', false);
+      txt(`SALON ${roomRoster.length}/${onlineCapacity} • ${MODES[mode].n}`, W / 2, 226, 8.5, '#ff0', 'center', false);
 
-      g.fillStyle = '#ffffff12';
-      g.fillRect(90, 292, 300, 62);
-      g.strokeStyle = '#0ff';
-      g.lineWidth = 2.5;
-      g.strokeRect(90, 292, 300, 62);
-      txt(roomCode || '....', W / 2, 336, 26, '#ff0', 'center', true);
+      // Affichage des slots joueurs (1 a 4)
+      for (let i = 0; i < onlineCapacity; i++) {
+        const sy = 244 + i * 44;
+        const p = roomRoster[i];
+        const col = PLAYER_COLORS[i % PLAYER_COLORS.length];
+        g.fillStyle = p ? '#140842' : '#ffffff08';
+        g.fillRect(50, sy, W - 100, 36);
+        g.strokeStyle = p ? col : '#ffffff33';
+        g.lineWidth = 1.5;
+        g.strokeRect(50, sy, W - 100, 36);
 
-      btn(110, 372, 260, 40, copiedToast > 0 ? 'CODE COPIE !' : 'COPIER LE CODE', false, copyRoomCode, 9, '#0f8');
-      txt(netStatus, W / 2, 448, 8.5, '#0ff', 'center', false);
-      if (Math.floor(tk / 25) % 2 === 0) {
-        txt('EN ATTENTE DU JOUEUR 2...', W / 2, 478, 7.5, '#f0f', 'center', false);
+        txt('J' + (i + 1), 64, sy + 23, 8, col, 'left', false);
+        if (p) {
+          txt(p.nick + (i === 0 ? ' (HOTE)' : ''), 105, sy + 23, 8, '#fff', 'left', false);
+          txt('PRET', W - 64, sy + 23, 7, '#0f8', 'right', false);
+        } else {
+          txt('EN ATTENTE...', 105, sy + 23, 7.5, '#fff6', 'left', false);
+        }
+      }
+
+      const codeY = 250 + onlineCapacity * 44;
+      txt('CODE SALON : ' + (roomCode || '....'), W / 2, codeY + 14, 11, '#0ff', 'center', false);
+      btn(110, codeY + 26, 260, 34, copiedToast > 0 ? 'CODE COPIE !' : 'COPIER LE CODE', false, copyRoomCode, 8, '#0f8');
+
+      if (roomRoster.length >= 2 && roomRoster.length < onlineCapacity) {
+        btn(70, codeY + 70, 340, 42, 'LANCER MAINTENANT', true, launchOnlineMatch, 9.5, '#ff0');
+      } else {
+        txt('DEMARRAGE AUTO DES QUE COMPLET !', W / 2, codeY + 86, 6.8, '#0f8', 'center', false);
       }
     } else if (onlineSub === 'joining') {
       txt('SAISIS LE CODE DU SALON :', W / 2, 315, 9, '#fff', 'center', false);
@@ -2204,11 +2595,11 @@
       txt(netStatus, W / 2, 505, 8, '#ff0', 'center', false);
     }
 
-    btn(110, 640, 260, 48, 'RETOUR MENU', false, () => {
+    btn(110, 668, 260, 44, 'RETOUR MENU', false, () => {
       closeNetwork();
       st = 'menu';
       tone(440, 0.06);
-    }, 11, '#f0f');
+    }, 10, '#f0f');
   }
 
   function drawStats() {
@@ -2241,7 +2632,8 @@
 
   function drawPass() {
     overlay(0.84);
-    txt('JOUEUR ' + (cp + 1), W / 2, 320, 36, cp ? '#f0f' : '#0ff', 'center', true);
+    const col = PLAYER_COLORS[cp % PLAYER_COLORS.length];
+    txt('JOUEUR ' + (cp + 1), W / 2, 320, 36, col, 'center', true);
     txt('A TOI DE JOUER !', W / 2, 376, 12, '#ff0', 'center', false);
     txt('PASSE L APPAREIL AU JOUEUR ' + (cp + 1), W / 2, 420, 8, '#fff', 'center', false);
     if (Math.floor(tk / 28) % 2 === 0) {
@@ -2269,27 +2661,38 @@
 
   function drawOver() {
     overlay(0.91);
-    txt(FIN && fi >= NF ? 'PARTIE TERMINEE' : 'FIN DE PARTIE', W / 2, 130, 20, '#ff0', 'center', true);
+    txt(FIN && fi >= NF ? 'PARTIE TERMINEE' : 'FIN DE PARTIE', W / 2, 95, 20, '#ff0', 'center', true);
 
     const tt = PL.map(total);
     const top = Math.max(...tt);
+    const compact = np > 2;
+    const cardH = compact ? 74 : 112;
+    const gap = compact ? 84 : 135;
+    const startY = compact ? 150 : 210;
 
     PL.forEach((p, i) => {
-      const y = 210 + i * 135;
+      const y = startY + i * gap;
       const win = np > 1 && tt[i] === top && tt.filter(v => v === top).length === 1;
-      const col = i ? '#f0f' : '#0ff';
+      const col = PLAYER_COLORS[i % PLAYER_COLORS.length];
 
       g.fillStyle = '#ffffff0c';
-      g.fillRect(36, y - 26, W - 72, 112);
+      g.fillRect(36, y - 20, W - 72, cardH);
       g.strokeStyle = win ? '#ff0' : col + '88';
       g.lineWidth = win ? 2.5 : 1.5;
-      g.strokeRect(36, y - 26, W - 72, 112);
+      g.strokeRect(36, y - 20, W - 72, cardH);
 
-      txt(playerLabel(i, false), W / 2, y, 10, col, 'center', false);
-      txt(String(tt[i]), W / 2, y + 40, 28, win || np === 1 ? '#ff0' : '#fff', 'center', true);
-      txt(`STRIKES: ${p.strikes}  •  SPARES: ${p.spares}  •  SERIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
+      if (compact) {
+        txt(playerLabel(i, false), 52, y + 6, 9, col, 'left', false);
+        txt(String(tt[i]), W - 52, y + 10, 18, win ? '#ff0' : '#fff', 'right', true);
+        txt(`STRIKES: ${p.strikes} • SPARES: ${p.spares} • SERIE: ${p.bestStreak}`, 52, y + 34, 6.2, '#ccc', 'left', false);
+      } else {
+        txt(playerLabel(i, false), W / 2, y, 10, col, 'center', false);
+        txt(String(tt[i]), W / 2, y + 40, 28, win || np === 1 ? '#ff0' : '#fff', 'center', true);
+        txt(`STRIKES: ${p.strikes}  •  SPARES: ${p.spares}  •  SERIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
+      }
     });
 
+    const bannerY = compact ? startY + np * gap + 8 : 485;
     if (np > 1) {
       let w = '';
       if (tt.filter(v => v === top).length > 1) {
@@ -2298,7 +2701,7 @@
         const winIdx = tt.indexOf(top);
         w = playerLabel(winIdx, false) + ' GAGNE !';
       }
-      txt(w, W / 2, 485, 10, '#0f8', 'center', false);
+      txt(w, W / 2, bannerY, 10, '#0f8', 'center', false);
     } else if (!FIN && total(PL[0]) >= stats.best && stats.best > 0) {
       txt('* NOUVEAU RECORD PERSONNEL ! *', W / 2, 365, 10, '#0f8', 'center', false);
     }
@@ -2461,7 +2864,6 @@
         const dx = mx - swipeStartX;
         const dt = Math.max(40, performance.now() - swipeTime);
         if (dy > 55) {
-          // Swipe vers le haut : lancer direct avec angle & puissance calcules
           aimA = clamp((dx / 190) * 0.42, -0.42, 0.42);
           const speed = dy / dt;
           power = clamp(0.45 + speed * 0.42, 0.4, 0.99);
@@ -2516,7 +2918,10 @@
           const types = ['solo', 'bot', 'local', 'online'];
           const idx = (types.indexOf(playType) + d + 4) % 4;
           playType = types[idx];
-          np = playType === 'solo' ? 1 : 2;
+          if (playType === 'solo') np = 1;
+          else if (playType === 'bot') np = 2;
+          else if (playType === 'local') np = localPlayers;
+          else np = onlineCapacity;
         }
         tone(520, 0.06);
       }
