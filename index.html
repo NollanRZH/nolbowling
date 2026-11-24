@@ -2,15 +2,20 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>NolBowling</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#04010c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>NolBowling • Synthwave Arcade</title>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0;
-    height: 100%;
+    padding: 0;
+    width: 100%;
+    height: 100dvh;
     background: #04010c;
     overflow: hidden;
     font-family: 'Press Start 2P', monospace;
@@ -20,15 +25,23 @@
   }
   #wrap {
     position: relative;
-    height: 100%;
-    width: 100%;
+    height: 100dvh;
+    width: 100vw;
     display: flex;
     align-items: center;
     justify-content: center;
     background: radial-gradient(circle at 50% 35%, #230754 0%, #09021c 55%, #03000a 100%);
   }
+  #stage {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   canvas {
     display: block;
+    width: 100%;
+    height: 100%;
     box-shadow: 0 0 50px rgba(255, 0, 255, 0.35), 0 0 0 3px #ff00ff, 0 0 0 6px rgba(0, 255, 255, 0.28);
     border-radius: 16px;
     cursor: pointer;
@@ -37,9 +50,10 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+    border-radius: 16px;
     background:
       radial-gradient(circle at center, transparent 62%, rgba(0, 0, 0, 0.42) 100%),
-      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
     mix-blend-mode: multiply;
   }
   .arcade-input {
@@ -53,18 +67,32 @@
     text-align: center;
     text-transform: uppercase;
     outline: none;
-    z-index: 20;
+    z-index: 30;
+    user-select: text;
+    -webkit-user-select: text;
+    touch-action: manipulation;
+    padding: 0 8px;
+  }
+  .arcade-input::placeholder {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .arcade-input:focus {
+    background: #140842;
   }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="c"></canvas>
-  <div id="crt"></div>
-  <input id="nickInput" class="arcade-input" type="text" maxlength="8" placeholder="PSEUDO" autocomplete="off" spellcheck="false"
-    style="top:27.5%;width:220px;height:40px;border:2px solid #ff00ff;color:#00ffff;font-size:14px;box-shadow:0 0 16px rgba(255,0,255,0.4);">
-  <input id="roomInput" class="arcade-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"
-    style="top:46%;width:170px;height:44px;border:2px solid #00ffff;color:#ffff00;font-size:18px;box-shadow:0 0 18px rgba(0,255,255,0.4);">
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="crt"></div>
+    <input id="nickInput" class="arcade-input" type="text" maxlength="10" placeholder="TON PSEUDO"
+      autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done"
+      style="top:26.5%;width:72%;max-width:260px;height:44px;border:2px solid #ff00ff;color:#00ffff;font-size:14px;box-shadow:0 0 18px rgba(255,0,255,0.45);">
+    <input id="roomInput" class="arcade-input" type="text" maxlength="4" placeholder="CODE"
+      autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go"
+      style="top:46%;width:52%;max-width:190px;height:48px;border:2px solid #00ffff;color:#ffff00;font-size:18px;box-shadow:0 0 20px rgba(0,255,255,0.45);">
+  </div>
 </div>
 <script>
 (() => {
@@ -73,6 +101,7 @@
   /* ==========================================================================
      1. INITIALISATION & CONSTANTES
      ========================================================================== */
+  const stage = document.getElementById('stage');
   const cv = document.getElementById('c');
   const g = cv.getContext('2d', { alpha: false, desynchronized: true });
   const W = 480, H = 800;
@@ -81,11 +110,14 @@
   cv.height = H * Q;
 
   function fit() {
-    const s = Math.min(window.innerWidth / W, window.innerHeight / H) * 0.98;
-    cv.style.width = (W * s) + 'px';
-    cv.style.height = (H * s) + 'px';
+    const vw = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const s = Math.min(vw / W, vh / H) * 0.97;
+    stage.style.width = Math.floor(W * s) + 'px';
+    stage.style.height = Math.floor(H * s) + 'px';
   }
   window.addEventListener('resize', fit);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
   fit();
   try { document.fonts.load("10px 'Press Start 2P'"); } catch (e) {}
 
@@ -109,7 +141,7 @@
   const BOT_LEVELS = [
     { n: 'ROOKIE', desc: 'IA DEBUTANTE • ERREURS FREQUENTES', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.25 },
     { n: 'PRO', desc: 'IA EQUILIBREE • VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
-    { n: 'CYBER PRO', desc: 'IA EXPERTE • POCHE 1 3 & EFFET', errPos: 5, errAng: 0.022, errPow: 0.035, spinSkill: 0.92 }
+    { n: 'CYBER PRO', desc: 'IA EXPERTE • POCHE 1-3 & EFFET', errPos: 5, errAng: 0.022, errPow: 0.035, spinSkill: 0.92 }
   ];
 
   let stats = {
@@ -134,7 +166,7 @@
     try { localStorage.setItem('nb_stats_v2', JSON.stringify(stats)); } catch (e) {}
   }
 
-  const STARS = Array.from({ length: 36 }, () => ({
+  const STARS = Array.from({ length: 38 }, () => ({
     x: Math.random() * W,
     y: 88 + Math.random() * 135,
     s: Math.random() * 1.7 + 0.6,
@@ -142,7 +174,7 @@
   }));
 
   /* ==========================================================================
-     2. ETAT DU JEU, BOT, RESEAU P2P & PRESENCE EN LIGNE
+     2. ETAT DU JEU, PSEUDOS (FIX MOBILE), BOT & RESEAU P2P
      ========================================================================== */
   let st = 'menu';
   let tk = 0;
@@ -150,7 +182,21 @@
   let playType = 'solo';
   let botDiff = 1;
 
-  let myNick = (stats.nick || 'JOUEUR').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8) || 'JOUEUR';
+  function cleanNickChars(raw) {
+    return String(raw || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9_-]/g, '')
+      .slice(0, 10);
+  }
+
+  function sanitizeNick(raw, fallback = 'JOUEUR') {
+    const clean = cleanNickChars(raw);
+    return clean.length > 0 ? clean : fallback;
+  }
+
+  let myNick = sanitizeNick(stats.nick, 'JOUEUR');
   let oppNick = 'AMI';
   let onlineCount = 1;
   let presencePeer = null;
@@ -160,6 +206,36 @@
 
   const nickInputEl = document.getElementById('nickInput');
   const roomInputEl = document.getElementById('roomInput');
+
+  // FIX DU BUG MOBILE : on laisse le champ vide pendant la saisie !
+  // On ne remet le nom par defaut qu'au blur ou au lancement si le champ est reste vide.
+  nickInputEl.value = stats.nick ? myNick : '';
+  nickInputEl.addEventListener('input', () => {
+    const filtered = cleanNickChars(nickInputEl.value);
+    if (nickInputEl.value !== filtered) {
+      const pos = nickInputEl.selectionStart || filtered.length;
+      nickInputEl.value = filtered;
+      try { nickInputEl.setSelectionRange(pos, pos); } catch (e) {}
+    }
+    if (filtered.length > 0) {
+      myNick = filtered;
+      stats.nick = myNick;
+      saveStats();
+    }
+  });
+
+  nickInputEl.addEventListener('blur', () => {
+    const finalNick = sanitizeNick(nickInputEl.value, 'JOUEUR');
+    myNick = finalNick;
+    nickInputEl.value = finalNick;
+    stats.nick = finalNick;
+    saveStats();
+  });
+
+  roomInputEl.addEventListener('input', () => {
+    const filtered = String(roomInputEl.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    if (roomInputEl.value !== filtered) roomInputEl.value = filtered;
+  });
 
   let NF = 0, FIN = false;
   let PL = [], cp = 0, fi = 0, fr = [], sb = 10, turnChg = false, level = 1;
@@ -172,7 +248,8 @@
   let msg = '', msgSub = '', msgC = '#ff0', msgT = 0;
   let gutter = false;
   let mute = false, musicOn = true;
-  let hits = [], mx = -1, my = -1, ptrDown = false, sx = 0, moved = false, hitBtn = false;
+  let hits = [], mx = -1, my = -1, ptrDown = false, sx = 0, sy = 0, moved = false, hitBtn = false;
+  let swipeMode = false, swipeStartY = 0, swipeStartX = 0, swipeTime = 0;
   let copiedToast = 0;
   let botPlan = null;
 
@@ -185,19 +262,9 @@
 
   let sweeper = { active: false, t: 0, dur: 52, resetRack: false, cleared: false };
 
-  function sanitizeNick(raw, fallback) {
-    const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8);
-    return clean || fallback;
+  function haptic(pattern = 15) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
   }
-
-  nickInputEl.value = myNick;
-  nickInputEl.addEventListener('input', () => {
-    const clean = sanitizeNick(nickInputEl.value, 'JOUEUR');
-    nickInputEl.value = clean;
-    myNick = clean;
-    stats.nick = myNick;
-    saveStats();
-  });
 
   function initSitePresence() {
     if (typeof Peer === 'undefined' || presencePeer) return;
@@ -363,8 +430,8 @@
     if (!mute && st === 'roll' && ball && ball.rolling && !gutter) {
       const sp = Math.hypot(ball.vx, ball.vy);
       const norm = clamp(sp / 16, 0, 1);
-      rollGain.gain.setTargetAtTime(0.02 + norm * 0.05, T, 0.05);
-      rollFilter.frequency.setTargetAtTime(90 + norm * 230, T, 0.05);
+      rollGain.gain.setTargetAtTime(0.02 + norm * 0.055, T, 0.05);
+      rollFilter.frequency.setTargetAtTime(90 + norm * 240, T, 0.05);
     } else {
       rollGain.gain.setTargetAtTime(0.0001, T, 0.06);
     }
@@ -408,11 +475,11 @@
       if (mute || !musicOn || !ac || ac.state !== 'running') return;
       const step = musicStep % 16;
       const bass = BASS_SEQ[step];
-      if (bass) tone(bass, 0.14, 'sawtooth', 0.016);
+      if (bass) tone(bass, 0.14, 'sawtooth', 0.015);
       if (st !== 'roll') {
         const lead = LEAD_SEQ[step];
         if (lead && (musicStep % 32 >= 16 || step % 4 === 0)) {
-          tone(lead, 0.18, 'triangle', 0.015);
+          tone(lead, 0.18, 'triangle', 0.014);
         }
       }
       musicStep++;
@@ -516,6 +583,7 @@
     conn.on('open', () => {
       netStatus = 'CONNECTE ! LANCEMENT...';
       arp([523.25, 659.25, 783.99], 60);
+      haptic([20, 40, 20]);
       netSend({ type: 'hello', nick: myNick });
       if (netRole === 'host') {
         netSend({ type: 'start', mode, nick: myNick, seed: Date.now() });
@@ -604,8 +672,15 @@
     }
   }
 
+  function commitNickField(fallback = 'JOUEUR') {
+    myNick = sanitizeNick(nickInputEl.value, fallback);
+    nickInputEl.value = myNick;
+    stats.nick = myNick;
+    saveStats();
+  }
+
   function hostRoom() {
-    myNick = sanitizeNick(nickInputEl.value, 'JOUEUR 1');
+    commitNickField('JOUEUR 1');
     closeNetwork();
     if (typeof Peer === 'undefined') {
       netStatus = 'PEERJS INDISPONIBLE';
@@ -631,12 +706,12 @@
         }
       });
     } catch (e) {
-      netStatus = 'WEBSOCKET BLOQUE ICI (OK SUR GITHUB PAGES)';
+      netStatus = 'RESEAU BLOQUE';
     }
   }
 
   function openJoinRoom() {
-    myNick = sanitizeNick(nickInputEl.value, 'JOUEUR 2');
+    commitNickField('JOUEUR 2');
     closeNetwork();
     netRole = 'guest';
     onlineSub = 'joining';
@@ -671,7 +746,7 @@
         tone(150, 0.25, 'sawtooth');
       });
     } catch (e) {
-      netStatus = 'WEBSOCKET BLOQUE ICI (OK SUR GITHUB PAGES)';
+      netStatus = 'RESEAU BLOQUE';
     }
   }
 
@@ -743,6 +818,7 @@
     powPh = 0;
     calmT = 0;
     settleT = 0;
+    swipeMode = false;
     newBall();
     if (isBotTurn()) {
       planBotShot();
@@ -868,7 +944,7 @@
         st = 'online';
         onlineSub = 'choice';
         netStatus = 'PRET A CONNECTER';
-        nickInputEl.value = myNick;
+        nickInputEl.value = stats.nick ? myNick : '';
         nickInputEl.style.display = 'block';
       } else {
         startGame();
@@ -884,6 +960,7 @@
         aimLock = 1;
         powPh = 0;
         tone(660, 0.08, 'square', 0.07);
+        haptic(12);
         netSend({ type: 'aim', px, aimLock, aimA, power });
       } else {
         launch();
@@ -899,8 +976,10 @@
     st = 'roll';
     settleT = 0;
     steerOn = false;
+    swipeMode = false;
     sb = pins.filter(p => !p.gone).length;
     tone(180, 0.35, 'sawtooth', 0.08, -100);
+    haptic(20);
 
     const isPerfect = power > 0.86 && power < 0.98;
     if (isPerfect) {
@@ -909,6 +988,7 @@
       flash = 0.22;
       flashCol = '#00ff88';
       tone(987.77, 0.12, 'triangle', 0.08);
+      haptic([15, 30, 25]);
     }
 
     if (playType === 'online' && isMyNetTurn()) {
@@ -1055,6 +1135,7 @@
       shake = 22;
       flash = 0.4;
       flashCol = '#ff00ff';
+      haptic([40, 30, 60]);
       arp([523.25, 659.25, 783.99, 1046.5, 1318.5], 55, 'sawtooth', 0.075);
       for (let i = 0; i < 4; i++) {
         setTimeout(() => {
@@ -1069,6 +1150,7 @@
       shake = 10;
       flash = 0.28;
       flashCol = '#00ffff';
+      haptic([25, 30, 35]);
       arp([440, 554.37, 659.25, 880], 65, 'square', 0.07);
       burst(240, 250, 24, '#0ff', 5);
     } else {
@@ -1079,9 +1161,10 @@
       if (n === 0) {
         say(gutter ? 'GOUTTIERE...' : 'RATE...', '#f35', 75, gutter ? 'GARDE LE CENTRE !' : '');
         tone(140, 0.38, 'sawtooth', 0.08, -85);
+        haptic(45);
       } else if (!done && checkSplit(standing)) {
         const is710 = standing.length === 2 && standing.some(p => p.id === 7) && standing.some(p => p.id === 10);
-        say(is710 ? 'SPLIT 7 10 !' : 'SPLIT !', '#ff6600', 85, n + ' QUILLE' + (n > 1 ? 'S' : '') + ' • BONNE CHANCE');
+        say(is710 ? 'SPLIT 7-10 !' : 'SPLIT !', '#ff6600', 85, n + ' QUILLE' + (n > 1 ? 'S' : '') + ' • BONNE CHANCE');
         arp([330, 293.66, 261.63], 70, 'triangle', 0.06);
       } else {
         say(n + (n > 1 ? ' QUILLES' : ' QUILLE'), '#fff', 55, left > 0 && !done ? left + ' RESTANTE' + (left > 1 ? 'S' : '') : '');
@@ -1129,7 +1212,6 @@
     wait = 96;
   }
 
-  // Physique exigeante : la boule devie et perd de l'energie a l'impact des quilles
   function ballPins() {
     if (!ball.rolling || gutter) return;
     for (let i = 0; i < pins.length; i++) {
@@ -1174,12 +1256,12 @@
         pop(b.x, b.y - 10, '+30', '#f0f');
         if (!FIN) PL[cp].bonus += 30;
         tone(880, 0.12, 'sawtooth', 0.07, 220);
+        haptic(18);
         shake = Math.max(shake, 6);
       }
     }
   }
 
-  // Inertie de quilles exigeante : un tir mal place laisse des quilles debout (7, 10, splits)
   function pinPhysics() {
     const live = [];
     for (let i = 0; i < pins.length; i++) {
@@ -1875,18 +1957,18 @@
     g.fillRect(0, 706, W, 94);
     line([0, 706], [W, 706], '#f0f', 3, 6);
 
-    btn(8, 770, 58, 22, 'MENU', false, quit, 7, '#f0f');
-    btn(414, 770, 58, 22, mute ? 'MUET' : 'SON', false, () => {
+    btn(8, 766, 66, 26, 'MENU', false, quit, 7.5, '#f0f');
+    btn(406, 766, 66, 26, mute ? 'MUET' : 'SON', false, () => {
       initAudio();
       mute = !mute;
-    }, 7, '#0ff');
+    }, 7.5, '#0ff');
 
     if (st === 'aim' || st === 'roll') {
       const lvTxt = !FIN ? ' • NIV ' + level : '';
       const who = np > 1 ? playerLabel(cp, true) + ' • ' : '';
       txt(
         who + 'FRAME ' + (fi + 1) + (FIN ? '/' + NF : '') + ' • LANCER ' + (fr.length + 1) + lvTxt,
-        W / 2, 756, 7.5, np > 1 && cp ? '#f0f' : '#0ff', 'center', false
+        W / 2, 754, 7.5, np > 1 && cp ? '#f0f' : '#0ff', 'center', false
       );
     }
 
@@ -1911,14 +1993,14 @@
       g.strokeRect(40, 714, 400, 18);
 
       if (isBotTurn()) {
-        txt('TOUR DU BOT (' + BOT_LEVELS[botDiff].n + ')...', W / 2, 777, 8, '#f0f');
-        txt('ANALYSE DE LA PISTE EN COURS', W / 2, 793, 7, '#ff0');
+        txt('TOUR DU BOT (' + BOT_LEVELS[botDiff].n + ')...', W / 2, 775, 8, '#f0f');
+        txt('ANALYSE DE LA PISTE EN COURS', W / 2, 792, 7, '#ff0');
       } else if (!isMyNetTurn()) {
-        txt('TOUR DE ' + oppNick + '...', W / 2, 777, 8, '#f0f');
-        txt('OBSERVE SON LANCER EN DIRECT', W / 2, 793, 7, '#0ff');
+        txt('TOUR DE ' + oppNick + '...', W / 2, 775, 8, '#f0f');
+        txt('OBSERVE SON LANCER EN DIRECT', W / 2, 792, 7, '#0ff');
       } else {
-        txt(aimLock ? 'CLIC / ESPACE : LANCER' : 'POSITION : < > OU SOURIS', W / 2, 776, 8, '#fff');
-        txt(aimLock ? 'VISE LA ZONE VERTE !' : 'CLIC / ESPACE : BLOQUER ANGLE', W / 2, 793, 7, '#ff0');
+        txt(aimLock ? 'CLIC / TAP : LANCER' : 'GLISSE : POSITION • TAP : ANGLE', W / 2, 775, 7.2, '#fff');
+        txt(aimLock ? 'VISE LA ZONE VERTE !' : 'OU SWIPE VERS LE HAUT POUR TIRER', W / 2, 792, 6.8, '#ff0');
       }
     } else if (st === 'roll') {
       g.fillStyle = '#ffffff18';
@@ -2010,7 +2092,7 @@
     } else if (playType === 'local') {
       txt('2 JOUEURS SUR LE MEME ECRAN (TOUR A TOUR)', W / 2, 428, 6.8, '#fffb', 'center', false);
     } else {
-      txt('POCHE 1 3 + EFFET POUR UN VRAI STRIKE', W / 2, 428, 6.8, '#fffb', 'center', false);
+      txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 428, 6.8, '#fffb', 'center', false);
     }
 
     txt('BOULE ARCADE', W / 2, 476, 8, '#0f8', 'center', false);
@@ -2049,7 +2131,7 @@
         st = 'online';
         onlineSub = 'choice';
         netStatus = 'PRET A CONNECTER';
-        nickInputEl.value = myNick;
+        nickInputEl.value = stats.nick ? myNick : '';
         nickInputEl.style.display = 'block';
         tone(620, 0.08);
       } else {
@@ -2072,14 +2154,19 @@
   }
 
   function copyRoomCode() {
-    const ta = document.createElement('textarea');
-    ta.value = roomCode;
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); } catch (e) {}
-    document.body.removeChild(ta);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(roomCode).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = roomCode;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
     copiedToast = 110;
     tone(880, 0.1, 'triangle', 0.07);
+    haptic(15);
   }
 
   function drawOnline() {
@@ -2087,7 +2174,7 @@
     txt('MULTIJOUEUR P2P', W / 2, 105, 20, '#0f8', 'center', true);
     txt(onlineCount + (onlineCount > 1 ? ' JOUEURS ACTIFS SUR LE SITE' : ' JOUEUR ACTIF SUR LE SITE'), W / 2, 134, 7.5, '#0ff', 'center', false);
 
-    txt('TON PSEUDO (8 CAR. MAX) :', W / 2, 182, 8, '#f0f', 'center', false);
+    txt('TON PSEUDO (10 CAR. MAX) :', W / 2, 174, 8, '#f0f', 'center', false);
 
     if (onlineSub === 'choice') {
       txt('MODE SELECTIONNE : ' + MODES[mode].n, W / 2, 272, 8, '#ff0', 'center', false);
@@ -2164,15 +2251,20 @@
 
   function shareScore(scoreVal) {
     const modeName = MODES[mode].n;
-    const text = `NolBowling (${modeName}) : ${scoreVal} pts ! Peux tu battre mon score ?`;
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); } catch (e) {}
-    document.body.removeChild(ta);
+    const text = `NolBowling (${modeName}) : ${scoreVal} pts ! Peux-tu battre mon score ?`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
     copiedToast = 110;
     tone(880, 0.1, 'triangle', 0.07);
+    haptic(15);
   }
 
   function drawOver() {
@@ -2299,7 +2391,7 @@
   }
 
   /* ==========================================================================
-     7. CONTROLES & BOUCLE PRINCIPALE
+     7. CONTROLES PC & MOBILE (CLIC/TAP + SWIPE TACTILE) & BOUCLE
      ========================================================================== */
   function cpos(e) {
     const r = cv.getBoundingClientRect();
@@ -2319,8 +2411,10 @@
 
   cv.addEventListener('pointermove', e => {
     cpos(e);
-    if (Math.abs(mx - sx) > 12) moved = true;
-    if (e.pointerType === 'mouse' || ptrDown) ptr(true);
+    if (Math.abs(mx - sx) > 10 || Math.abs(my - sy) > 10) moved = true;
+    if (e.pointerType === 'mouse' || ptrDown) {
+      if (!swipeMode) ptr(true);
+    }
   });
 
   cv.addEventListener('pointerdown', e => {
@@ -2329,8 +2423,10 @@
     cpos(e);
     ptrDown = true;
     sx = mx;
+    sy = my;
     moved = false;
     hitBtn = false;
+    swipeMode = false;
 
     for (let i = 0; i < hits.length; i++) {
       const h = hits[i];
@@ -2339,6 +2435,13 @@
         h.fn();
         return;
       }
+    }
+
+    if (e.pointerType !== 'mouse' && st === 'aim' && canLocalControl() && my > 560 && my < 705) {
+      swipeMode = true;
+      swipeStartY = my;
+      swipeStartX = mx;
+      swipeTime = performance.now();
     }
 
     if (e.pointerType === 'mouse') {
@@ -2352,9 +2455,28 @@
   function up(e) {
     if (!ptrDown) return;
     ptrDown = false;
-    if (e.type === 'pointerup' && e.pointerType !== 'mouse' && !hitBtn && !moved) {
-      action();
+    if (e.type === 'pointerup' && e.pointerType !== 'mouse' && !hitBtn) {
+      if (swipeMode && st === 'aim' && canLocalControl()) {
+        const dy = swipeStartY - my;
+        const dx = mx - swipeStartX;
+        const dt = Math.max(40, performance.now() - swipeTime);
+        if (dy > 55) {
+          // Swipe vers le haut : lancer direct avec angle & puissance calcules
+          aimA = clamp((dx / 190) * 0.42, -0.42, 0.42);
+          const speed = dy / dt;
+          power = clamp(0.45 + speed * 0.42, 0.4, 0.99);
+          aimLock = 1;
+          launch();
+          swipeMode = false;
+          steerOn = false;
+          return;
+        }
+      }
+      if (!moved) {
+        action();
+      }
     }
+    swipeMode = false;
     if (e.pointerType !== 'mouse') steerOn = false;
   }
 
@@ -2407,6 +2529,7 @@
     keys = {};
     ptrDown = false;
     steerOn = false;
+    swipeMode = false;
   });
 
   rack();
