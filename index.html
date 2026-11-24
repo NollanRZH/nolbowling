@@ -123,7 +123,9 @@
   function fit() {
     const vw = window.visualViewport ? window.visualViewport.width : window.innerWidth;
     const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    const s = Math.min(vw / W, vh / H) * 0.97;
+    const isMobile = vw < 600 || vh > vw * 1.25;
+    const scaleFactor = isMobile ? 0.994 : 0.975;
+    const s = Math.min(vw / W, vh / H) * scaleFactor;
     stage.style.width = Math.max(240, Math.floor(W * s)) + 'px';
     stage.style.height = Math.max(400, Math.floor(H * s)) + 'px';
   }
@@ -142,7 +144,7 @@
     { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES • 10 FRAMES' }
   ];
 
-  // Liste des boules disponibles (incluant Ylazia, France, Mexique, Bretagne et Stade Rennais)
+  // Liste des boules disponibles (10 boules sur 2 rangées de 5)
   const SKINS = [
     { id: 'cyan', name: 'CYBER CYAN', label: 'CYAN', c1: '#ffffff', c2: '#00ffff', c3: '#6600ff', glow: '#00ffff', trail: '#00ffff', req: 0 },
     { id: 'magenta', name: 'PLASMA PINK', label: 'PINK', c1: '#ffffff', c2: '#ff22ee', c3: '#660044', glow: '#ff00ff', trail: '#ff44ff', req: 0 },
@@ -151,6 +153,7 @@
     { id: 'ylazia', name: 'YLAZIA', label: 'YLAZIA', c1: '#ff66dd', c2: '#7a0bc0', c3: '#090114', glow: '#ff22bb', trail: '#e0119d', req: 0 },
     { id: 'france', name: 'FRANCE', label: 'FRANCE', c1: '#ffffff', c2: '#0055a4', c3: '#ef4135', glow: '#4da6ff', trail: '#ffffff', req: 0 },
     { id: 'mexique', name: 'MEXIQUE', label: 'MEXIQUE', c1: '#ffffff', c2: '#006847', c3: '#ce1126', glow: '#00d97e', trail: '#ff4444', req: 0 },
+    { id: 'pologne', name: 'POLOGNE', label: 'POLOGNE', c1: '#ffffff', c2: '#dc143c', c3: '#8b001e', glow: '#ff4d6d', trail: '#ff4d6d', req: 0 },
     { id: 'bretagne', name: 'BRETAGNE', label: 'BZH', c1: '#ffffff', c2: '#111111', c3: '#000000', glow: '#ffffff', trail: '#ffffff', req: 0 },
     { id: 'rennes', name: 'STADE RENNAIS', label: 'RENNES', c1: '#ff4444', c2: '#c8102e', c3: '#111111', glow: '#ff2a3c', trail: '#ff2a3c', req: 0 }
   ];
@@ -2236,41 +2239,61 @@
         g.arc(0, r * 0.03, r * 0.22, 0.25, Math.PI - 0.25);
         g.stroke();
       }
+    } else if (type === 'pologne') {
+      // Drapeau de la Pologne : blanc pur en haut, rouge cramoisi pur en bas (sans aucun motif ajouté)
+      const topWhite = locked ? '#888888' : '#f8f9fb';
+      const botRed = locked ? '#484848' : '#dc143c';
+
+      g.fillStyle = topWhite;
+      g.fillRect(-r, -r, r * 2, r);
+
+      g.fillStyle = botRed;
+      g.fillRect(-r, 0, r * 2, r);
     } else if (type === 'bretagne') {
-      // Gwenn ha Du : bandes noires et blanches + hermines stylisees
-      const darkB = locked ? '#333333' : '#111116';
-      const lightB = locked ? '#888888' : '#f7f8fa';
+      // Gwenn ha Du net : fond blanc, 5 bandes noires horizontales, canton noir en haut à gauche + hermines blanches
+      const darkB = locked ? '#262626' : '#0e0e12';
+      const lightB = locked ? '#888888' : '#f8f9fb';
+
       g.fillStyle = lightB;
       g.fillRect(-r, -r, r * 2, r * 2);
 
-      const stripeH = (r * 2) / 9;
+      const bandH = (r * 2) / 9;
       g.fillStyle = darkB;
-      for (let i = 0; i < 9; i += 2) {
-        g.fillRect(-r, -r + i * stripeH, r * 2, stripeH);
+      for (let bIdx = 0; bIdx < 9; bIdx += 2) {
+        g.fillRect(-r, -r + bIdx * bandH, r * 2.02, bandH + 0.4);
       }
 
-      // Canton noir supérieur gauche avec hermines blanches
+      // Canton supérieur gauche noir (5 bandes de hauteur, largeur nette)
+      const cantW = r * 1.02;
+      const cantH = bandH * 5 + 0.4;
       g.fillStyle = darkB;
-      g.fillRect(-r, -r, r * 1.15, r * 1.15);
+      g.fillRect(-r, -r, cantW, cantH);
 
+      // Mouchetures d'hermine blanches bien lisibles
       g.fillStyle = lightB;
-      const hermPts = [
-        [-r * 0.72, -r * 0.65],
-        [-r * 0.32, -r * 0.65],
-        [-r * 0.52, -r * 0.32],
-        [-r * 0.72, -r * 0.02],
-        [-r * 0.32, -r * 0.02]
-      ];
-      hermPts.forEach(([hx, hy]) => {
-        const hs = r * 0.09;
+      const drawHermine = (hx, hy, hs) => {
+        // Queue verticale en pointe vers le bas
         g.beginPath();
-        g.moveTo(hx, hy - hs);
-        g.lineTo(hx + hs * 0.75, hy + hs * 0.65);
-        g.lineTo(hx, hy + hs * 0.35);
-        g.lineTo(hx - hs * 0.75, hy + hs * 0.65);
+        g.moveTo(hx - hs * 0.22, hy + hs * 0.12);
+        g.lineTo(hx + hs * 0.22, hy + hs * 0.12);
+        g.lineTo(hx, hy + hs * 1.18);
         g.closePath();
         g.fill();
-      });
+
+        // Tête / corps en trèfle d'hermine
+        g.beginPath();
+        g.arc(hx, hy - hs * 0.24, hs * 0.34, 0, Math.PI * 2);
+        g.arc(hx - hs * 0.38, hy + hs * 0.04, hs * 0.25, 0, Math.PI * 2);
+        g.arc(hx + hs * 0.38, hy + hs * 0.04, hs * 0.25, 0, Math.PI * 2);
+        g.fill();
+      };
+
+      const hs = r * 0.15;
+      drawHermine(-r * 0.74, -r * 0.72, hs);
+      drawHermine(-r * 0.26, -r * 0.72, hs);
+      drawHermine(-r * 0.50, -r * 0.34, hs);
+      drawHermine(-r * 0.74, 0.0, hs);
+      drawHermine(-r * 0.26, 0.0, hs);
     } else if (type === 'rennes') {
       // Stade Rennais : rouge et noir iconique + blason central
       const redR = locked ? '#666666' : '#c8102e';
@@ -2280,7 +2303,6 @@
       g.fillStyle = redR;
       g.fillRect(-r, -r, r * 2, r * 2);
 
-      // Bande verticale noire centrale / latérale stylisée
       g.fillStyle = blkR;
       g.beginPath();
       g.moveTo(-r * 0.36, -r);
@@ -2290,7 +2312,6 @@
       g.closePath();
       g.fill();
 
-      // Anneau / blason doré & blanc du club
       g.strokeStyle = locked ? '#777777' : '#ffffff';
       g.lineWidth = Math.max(1.2, r * 0.09);
       g.beginPath();
@@ -2306,9 +2327,9 @@
 
     // Trois trous de bowling realistes
     const holes = [
-      { x: -r * 0.20, y: -r * 0.38, hr: r * 0.125 },
-      { x: r * 0.18, y: -r * 0.38, hr: r * 0.125 },
-      { x: 0, y: r * 0.36, hr: r * 0.15 }
+      { x: -r * 0.22, y: -r * 0.38, hr: r * 0.12 },
+      { x: r * 0.20, y: -r * 0.38, hr: r * 0.12 },
+      { x: -r * 0.02, y: r * 0.36, hr: r * 0.145 }
     ];
     for (let i = 0; i < holes.length; i++) {
       const h = holes[i];
@@ -2379,7 +2400,7 @@
       return;
     }
 
-    if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'bretagne' || sk.id === 'rennes') {
+    if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'pologne' || sk.id === 'bretagne' || sk.id === 'rennes') {
       drawSpecialBallSurface(x, y - r * 0.3, r, ball.rot * 0.45 + ball.spin * 0.5, sk.id, false);
       return;
     }
@@ -2699,21 +2720,21 @@
     txt(statusBanner, 248, 27, 7, '#0f8', 'center', false);
 
     const y = Math.sin(tk / 20) * 3.5;
-    txt('NOL', W / 2, 92 + y, 50, '#0ff', 'center', true);
-    txt('BOWLING', W / 2, 148 + y, 42, '#f0f', 'center', true);
-    txt('ARCADE EDITION', W / 2, 174, 8, '#ff0', 'center', false);
+    txt('NOL', W / 2, 90 + y, 50, '#0ff', 'center', true);
+    txt('BOWLING', W / 2, 145 + y, 42, '#f0f', 'center', true);
+    txt('ARCADE EDITION', W / 2, 171, 8, '#ff0', 'center', false);
 
-    txt('MODE DE JEU', W / 2, 202, 7.5, mrow === 0 ? '#ff0' : '#0ff', 'center', false);
+    txt('MODE DE JEU', W / 2, 198, 7.5, mrow === 0 ? '#ff0' : '#0ff', 'center', false);
     MODES.forEach((m, i) => {
-      btn(24 + i * 148, 210, 136, 32, m.n, mode === i, () => {
+      btn(24 + i * 148, 206, 136, 32, m.n, mode === i, () => {
         mode = i;
         mrow = 0;
         tone(520, 0.06);
       }, 7.8, '#0ff');
     });
-    txt(MODES[mode].d, W / 2, 256, 6.4, '#fffb', 'center', false);
+    txt(MODES[mode].d, W / 2, 252, 6.4, '#fffb', 'center', false);
 
-    txt('ADVERSAIRE', W / 2, 280, 7.5, mrow === 1 ? '#ff0' : '#f0f', 'center', false);
+    txt('ADVERSAIRE', W / 2, 275, 7.5, mrow === 1 ? '#ff0' : '#f0f', 'center', false);
     const P_TYPES = [
       ['SOLO', 'solo'],
       ['VS BOT', 'bot'],
@@ -2721,7 +2742,7 @@
       ['EN LIGNE', 'online']
     ];
     P_TYPES.forEach(([label, val], i) => {
-      btn(22 + i * 111, 288, 103, 32, label, playType === val, () => {
+      btn(22 + i * 111, 283, 103, 32, label, playType === val, () => {
         playType = val;
         if (val === 'solo') np = 1;
         else if (val === 'bot') np = 2;
@@ -2734,41 +2755,41 @@
 
     if (playType === 'bot') {
       BOT_LEVELS.forEach((b, i) => {
-        btn(24 + i * 148, 328, 136, 26, b.n, botDiff === i, () => {
+        btn(24 + i * 148, 323, 136, 26, b.n, botDiff === i, () => {
           botDiff = i;
           tone(600, 0.06);
         }, 7, '#ff0');
       });
-      txt(BOT_LEVELS[botDiff].desc, W / 2, 366, 6.2, '#ff0', 'center', false);
+      txt(BOT_LEVELS[botDiff].desc, W / 2, 361, 6.2, '#ff0', 'center', false);
     } else if (playType === 'local') {
       [2, 3, 4].forEach((cnt, i) => {
-        btn(54 + i * 126, 328, 118, 26, cnt + ' JOUEURS', localPlayers === cnt, () => {
+        btn(54 + i * 126, 323, 118, 26, cnt + ' JOUEURS', localPlayers === cnt, () => {
           localPlayers = cnt;
           np = cnt;
           tone(600, 0.06);
         }, 7, '#ff0');
       });
-      txt('TOUR A TOUR SUR LE MEME ECRAN (' + localPlayers + ' JOUEURS)', W / 2, 366, 6.2, '#fffb', 'center', false);
+      txt('TOUR A TOUR SUR LE MEME ECRAN (' + localPlayers + ' JOUEURS)', W / 2, 361, 6.2, '#fffb', 'center', false);
     } else if (playType === 'online') {
-      txt('SALONS PUBLICS OU PRIVES • 1 A 4 JOUEURS', W / 2, 344, 6.5, '#0f8', 'center', false);
-      txt('REJOINS UN SALON DISPO OU CREE LE TIEN', W / 2, 362, 6.2, '#fffb', 'center', false);
+      txt('SALONS PUBLICS OU PRIVES • 1 A 4 JOUEURS', W / 2, 340, 6.5, '#0f8', 'center', false);
+      txt('REJOINS UN SALON DISPO OU CREE LE TIEN', W / 2, 358, 6.2, '#fffb', 'center', false);
     } else {
-      txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 350, 6.5, '#fffb', 'center', false);
+      txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 346, 6.5, '#fffb', 'center', false);
     }
 
-    // Section Boules rangée sur 2 lignes propres et aérées
+    // Section Boules rangée sur 2 lignes de 5 boules
     const activeSkin = SKINS[stats.skin] || SKINS[0];
     g.fillStyle = 'rgba(255, 255, 255, 0.04)';
-    g.fillRect(20, 380, W - 40, 178);
+    g.fillRect(20, 375, W - 40, 182);
     g.strokeStyle = 'rgba(0, 255, 136, 0.35)';
     g.lineWidth = 1.5;
-    g.strokeRect(20, 380, W - 40, 178);
+    g.strokeRect(20, 375, W - 40, 182);
 
-    txt('BOULES ARCADE', W / 2, 398, 7.8, '#0f8', 'center', false);
-    txt('SELECTION : ' + activeSkin.name, W / 2, 413, 6.4, activeSkin.glow || '#ff0', 'center', false);
+    txt('BOULES ARCADE', W / 2, 393, 7.8, '#0f8', 'center', false);
+    txt('SELECTION : ' + activeSkin.name, W / 2, 408, 6.4, activeSkin.glow || '#ff0', 'center', false);
 
     const row1 = SKINS.slice(0, 5);
-    const row2 = SKINS.slice(5);
+    const row2 = SKINS.slice(5, 10);
 
     const drawSkinRow = (list, startIndex, rowY) => {
       const count = list.length;
@@ -2801,7 +2822,7 @@
 
         if (sk.id === 'ylazia') {
           drawYlaziaSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, !unlocked);
-        } else if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'bretagne' || sk.id === 'rennes') {
+        } else if (sk.id === 'france' || sk.id === 'mexique' || sk.id === 'pologne' || sk.id === 'bretagne' || sk.id === 'rennes') {
           drawSpecialBallSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, sk.id, !unlocked);
         } else {
           const gr = g.createRadialGradient(cx - 3.5, cy - 3.5, 1, cx, cy, r);
@@ -2815,15 +2836,15 @@
         }
 
         const labelTxt = unlocked ? (sk.label || sk.name) : sk.req + 'X';
-        txt(labelTxt, cx, rowY + 45, 5.4, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
+        txt(labelTxt, cx, rowY + 45, 5.3, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
       });
     };
 
-    drawSkinRow(row1, 0, 424);
-    drawSkinRow(row2, 5, 488);
+    drawSkinRow(row1, 0, 419);
+    drawSkinRow(row2, 5, 485);
 
     const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
-    btn(90, 574, 300, 48, mainLabel, Math.floor(tk / 28) % 2 === 0, () => {
+    btn(90, 573, 300, 48, mainLabel, Math.floor(tk / 28) % 2 === 0, () => {
       if (playType === 'online') {
         openOnlineLobby();
         tone(620, 0.08);
@@ -2832,8 +2853,8 @@
       }
     }, 14, '#ff0');
 
-    btn(90, 632, 142, 32, 'RECORDS', false, () => { st = 'stats'; tone(580, 0.07); }, 7.8, '#0ff');
-    btn(248, 632, 142, 32, mute ? 'SON : OFF' : 'SON : ON', false, () => {
+    btn(90, 631, 142, 32, 'RECORDS', false, () => { st = 'stats'; tone(580, 0.07); }, 7.8, '#0ff');
+    btn(248, 631, 142, 32, mute ? 'SON : OFF' : 'SON : ON', false, () => {
       initAudio();
       mute = !mute;
     }, 7.8, '#f0f');
