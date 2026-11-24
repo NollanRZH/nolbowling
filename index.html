@@ -21,6 +21,7 @@
   #wrap {
     position: relative;
     height: 100%;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -28,7 +29,7 @@
   }
   canvas {
     display: block;
-    box-shadow: 0 0 60px rgba(255, 0, 255, 0.45), 0 0 0 3px #ff00ff, 0 0 0 7px rgba(0, 255, 255, 0.35);
+    box-shadow: 0 0 50px rgba(255, 0, 255, 0.35), 0 0 0 3px #ff00ff, 0 0 0 6px rgba(0, 255, 255, 0.28);
     border-radius: 16px;
     cursor: pointer;
   }
@@ -37,9 +38,22 @@
     inset: 0;
     pointer-events: none;
     background:
-      radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.45) 100%),
-      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.2) 0 1px, transparent 1px 3px);
+      radial-gradient(circle at center, transparent 62%, rgba(0, 0, 0, 0.42) 100%),
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
     mix-blend-mode: multiply;
+  }
+  .arcade-input {
+    display: none;
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #0b0428;
+    border-radius: 8px;
+    font-family: 'Press Start 2P', monospace;
+    text-align: center;
+    text-transform: uppercase;
+    outline: none;
+    z-index: 20;
   }
 </style>
 </head>
@@ -47,22 +61,20 @@
 <div id="wrap">
   <canvas id="c"></canvas>
   <div id="crt"></div>
-  <!-- Champ de saisie flottant pour le pseudo du joueur en ligne -->
-  <input id="nickInput" type="text" maxlength="8" placeholder="PSEUDO" autocomplete="off" spellcheck="false"
-    style="display:none;position:absolute;top:27.5%;left:50%;transform:translate(-50%,-50%);width:220px;height:40px;background:#0b0428;border:2px solid #ff00ff;border-radius:8px;color:#00ffff;font-family:'Press Start 2P',monospace;font-size:14px;text-align:center;text-transform:uppercase;outline:none;box-shadow:0 0 18px #ff00ff66;z-index:20;">
-  <!-- Champ de saisie flottant pour le code du salon P2P -->
-  <input id="roomInput" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"
-    style="display:none;position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);width:170px;height:44px;background:#0b0428;border:2px solid #00ffff;border-radius:8px;color:#ffff00;font-family:'Press Start 2P',monospace;font-size:18px;text-align:center;text-transform:uppercase;outline:none;box-shadow:0 0 20px #00ffff66;z-index:20;">
+  <input id="nickInput" class="arcade-input" type="text" maxlength="8" placeholder="PSEUDO" autocomplete="off" spellcheck="false"
+    style="top:27.5%;width:220px;height:40px;border:2px solid #ff00ff;color:#00ffff;font-size:14px;box-shadow:0 0 16px rgba(255,0,255,0.4);">
+  <input id="roomInput" class="arcade-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"
+    style="top:46%;width:170px;height:44px;border:2px solid #00ffff;color:#ffff00;font-size:18px;box-shadow:0 0 18px rgba(0,255,255,0.4);">
 </div>
 <script>
 (() => {
   'use strict';
 
   /* ==========================================================================
-     1. CONFIGURATION & ETAT GLOBAL
+     1. INITIALISATION & CONSTANTES
      ========================================================================== */
   const cv = document.getElementById('c');
-  const g = cv.getContext('2d');
+  const g = cv.getContext('2d', { alpha: false, desynchronized: true });
   const W = 480, H = 800;
   const Q = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
   cv.width = W * Q;
@@ -82,7 +94,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   const MODES = [
-    { n: 'INFINI', f: 0, d: 'SANS FIN • OBSTACLES • RECORD' },
+    { n: 'INFINI', f: 0, d: 'SANS FIN • NIVEAUX • RECORD' },
     { n: '5 FRAMES', f: 5, d: 'PARTIE RAPIDE EN 5 FRAMES' },
     { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES • 10 FRAMES' }
   ];
@@ -94,7 +106,12 @@
     { id: 'matrix', name: 'VOID MATRIX', c1: '#ccffcc', c2: '#00ff66', c3: '#003311', glow: '#00ff88', trail: '#00ff66', req: 10 }
   ];
 
-  // Sauvegarde locale persistante
+  const BOT_LEVELS = [
+    { n: 'ROOKIE', desc: 'IA DEBUTANTE • ERREURS FREQUENTES', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.25 },
+    { n: 'PRO', desc: 'IA EQUILIBREE • VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
+    { n: 'CYBER PRO', desc: 'IA EXPERTE • POCHE 1 3 & EFFET', errPos: 5, errAng: 0.022, errPow: 0.035, spinSkill: 0.92 }
+  ];
+
   let stats = {
     best: 0,
     strikes: 0,
@@ -117,32 +134,30 @@
     try { localStorage.setItem('nb_stats_v2', JSON.stringify(stats)); } catch (e) {}
   }
 
-  // Étoiles de fond synthwave
-  const STARS = Array.from({ length: 42 }, () => ({
+  const STARS = Array.from({ length: 36 }, () => ({
     x: Math.random() * W,
-    y: 88 + Math.random() * 140,
-    s: Math.random() * 1.8 + 0.6,
+    y: 88 + Math.random() * 135,
+    s: Math.random() * 1.7 + 0.6,
     ph: Math.random() * 6.28
   }));
 
-  // Variables d'etat du jeu
-  let st = 'menu'; // 'menu' | 'stats' | 'online' | 'aim' | 'roll' | 'between' | 'pass' | 'over'
+  /* ==========================================================================
+     2. ETAT DU JEU, BOT, RESEAU P2P & PRESENCE EN LIGNE
+     ========================================================================== */
+  let st = 'menu';
   let tk = 0;
   let mode = 0, np = 1, mrow = 0;
-  let playType = 'solo'; // 'solo' | 'bot' | 'local' | 'online'
-  let botDiff = 1; // 0: ROOKIE, 1: PRO, 2: CYBER PRO
-  const BOT_LEVELS = [
-    { n: 'ROOKIE', desc: 'IA DEBUTANTE • FAIT DES ERREURS', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.2 },
-    { n: 'PRO', desc: 'IA EQUILIBREE • VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
-    { n: 'CYBER PRO', desc: 'IA EXPERTE • POCHE 1 3 & EFFET', errPos: 4, errAng: 0.02, errPow: 0.03, spinSkill: 0.95 }
-  ];
+  let playType = 'solo';
+  let botDiff = 1;
+
   let myNick = (stats.nick || 'JOUEUR').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8) || 'JOUEUR';
   let oppNick = 'AMI';
   let onlineCount = 1;
   let presencePeer = null;
-  let presenceConns = new Map();
-  let knownPeers = new Set();
+  const presenceConns = new Map();
+  const knownPeers = new Set();
   const mySessionId = 'nbu-' + Math.random().toString(36).slice(2, 10);
+
   const nickInputEl = document.getElementById('nickInput');
   const roomInputEl = document.getElementById('roomInput');
 
@@ -167,18 +182,23 @@
   let roomCode = '';
   let onlineSub = 'choice';
   let netSyncTimer = 0;
-  let remoteEndPending = null;
+
+  let sweeper = { active: false, t: 0, dur: 52, resetRack: false, cleared: false };
+
+  function sanitizeNick(raw, fallback) {
+    const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8);
+    return clean || fallback;
+  }
 
   nickInputEl.value = myNick;
   nickInputEl.addEventListener('input', () => {
-    const clean = nickInputEl.value.toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8);
+    const clean = sanitizeNick(nickInputEl.value, 'JOUEUR');
     nickInputEl.value = clean;
-    myNick = clean || 'JOUEUR';
+    myNick = clean;
     stats.nick = myNick;
     saveStats();
   });
 
-  // Compteur de joueurs connectes en temps reel sur le site via PeerJS (PC + Mobile)
   function initSitePresence() {
     if (typeof Peer === 'undefined' || presencePeer) return;
     const SLOTS = 8;
@@ -228,7 +248,6 @@
       });
       c.on('close', () => {
         presenceConns.delete(pid);
-        if (c._remoteSessionId) knownPeers.delete(c._remoteSessionId);
         broadcastPresence();
       });
       c.on('error', () => {
@@ -279,7 +298,6 @@
 
     tryClaimHub(0);
 
-    // Rafraichissement periodique pour detecter les nouveaux arrivants PC/Mobile
     setInterval(() => {
       if (presencePeer && !presencePeer.destroyed) {
         connectToHubs(-1);
@@ -295,14 +313,10 @@
     });
   }
 
-  // Demarre le compteur de presence des l'ouverture du site
   setTimeout(initSitePresence, 300);
 
-  // Animation de la balayeuse mecanique (Pinsetter)
-  let sweeper = { active: false, t: 0, dur: 54, resetRack: false, cleared: false };
-
   /* ==========================================================================
-     2. AUDIO SYNTHWAVE & SOUND DESIGN (WEB AUDIO API)
+     3. AUDIO SYNTHWAVE (WEB AUDIO API)
      ========================================================================== */
   let ac = null;
   let rollNode = null, rollGain = null, rollFilter = null;
@@ -349,8 +363,8 @@
     if (!mute && st === 'roll' && ball && ball.rolling && !gutter) {
       const sp = Math.hypot(ball.vx, ball.vy);
       const norm = clamp(sp / 16, 0, 1);
-      rollGain.gain.setTargetAtTime(0.02 + norm * 0.055, T, 0.05);
-      rollFilter.frequency.setTargetAtTime(90 + norm * 240, T, 0.05);
+      rollGain.gain.setTargetAtTime(0.02 + norm * 0.05, T, 0.05);
+      rollFilter.frequency.setTargetAtTime(90 + norm * 230, T, 0.05);
     } else {
       rollGain.gain.setTargetAtTime(0.0001, T, 0.06);
     }
@@ -379,7 +393,6 @@
   const arp = (a, s = 65, ty = 'square', v = 0.065) =>
     a.forEach((f, i) => setTimeout(() => tone(f, 0.15, ty, v), i * s));
 
-  // Séquenceur Synthwave léger en arrière-plan
   const BASS_SEQ = [
     110, 110, 220, 110, 130.81, 130.81, 261.63, 130.81,
     87.31, 87.31, 174.61, 87.31, 98.00, 98.00, 196.00, 146.83
@@ -395,11 +408,11 @@
       if (mute || !musicOn || !ac || ac.state !== 'running') return;
       const step = musicStep % 16;
       const bass = BASS_SEQ[step];
-      if (bass) tone(bass, 0.14, 'sawtooth', 0.018);
+      if (bass) tone(bass, 0.14, 'sawtooth', 0.016);
       if (st !== 'roll') {
         const lead = LEAD_SEQ[step];
         if (lead && (musicStep % 32 >= 16 || step % 4 === 0)) {
-          tone(lead, 0.18, 'triangle', 0.016);
+          tone(lead, 0.18, 'triangle', 0.015);
         }
       }
       musicStep++;
@@ -408,9 +421,9 @@
   startMusicLoop();
 
   /* ==========================================================================
-     3. RÈGLES OFFICIELLES DE BOWLING & CALCUL DU SCORE
+     4. REGLES DE BOWLING & CALCUL DU SCORE
      ========================================================================== */
-  const f0 = v => (v === 0 ? '-' : '' + v);
+  const f0 = v => (v === 0 ? '.' : '' + v);
 
   function calc(p) {
     const r = p.rolls;
@@ -469,7 +482,7 @@
   const total = p => calc(p).tot + p.bonus;
 
   /* ==========================================================================
-     4. LOGIQUE DU JEU, PHYSIQUE & OBSTACLES
+     5. MULTIJOUEUR P2P, PHYSIQUE EXIGEANTE & DEROULEMENT
      ========================================================================== */
   const isBotTurn = () => playType === 'bot' && cp === 1;
   const isMyNetTurn = () => playType !== 'online' || (netRole === 'host' && cp === 0) || (netRole === 'guest' && cp === 1);
@@ -576,7 +589,6 @@
     } else if (d.type === 'throw_res') {
       if (!isMyNetTurn()) {
         if (st === 'roll') {
-          remoteEndPending = d;
           endThrow(d);
         } else if (st === 'between') {
           pins.forEach((p, idx) => {
@@ -590,11 +602,6 @@
     } else if (d.type === 'rematch') {
       startGame(true);
     }
-  }
-
-  function sanitizeNick(raw, fallback) {
-    const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8);
-    return clean || fallback;
   }
 
   function hostRoom() {
@@ -652,7 +659,7 @@
     }
     roomInputEl.style.display = 'none';
     roomCode = code;
-    netStatus = 'CONNEXION A NOL ' + code + '...';
+    netStatus = 'CONNEXION A ' + code + '...';
     try {
       peer = new Peer();
       peer.on('open', () => {
@@ -671,7 +678,6 @@
   function rack() {
     pins = [];
     let num = 1;
-    // Disposition officielle des 10 quilles (1 devant, 7-8-9-10 au fond)
     for (let i = 0; i < 4; i++) {
       for (let j = 0; j <= i; j++) {
         const x = 240 + (j - i / 2) * 36;
@@ -697,7 +703,6 @@
   function setBumpers() {
     bumpers = [];
     if (FIN || level < 2) return;
-    // Ajout progressif de bumpers néon mobiles en mode Infini
     const count = Math.min(3, Math.floor(level / 2));
     for (let i = 0; i < count; i++) {
       const y = 415 - i * 52;
@@ -738,7 +743,6 @@
     powPh = 0;
     calmT = 0;
     settleT = 0;
-    remoteEndPending = null;
     newBall();
     if (isBotTurn()) {
       planBotShot();
@@ -747,29 +751,24 @@
     }
   }
 
-  // Planification intelligente du lancer du Bot selon la difficulté et les quilles restantes
   function planBotShot() {
     const cfg = BOT_LEVELS[botDiff];
     const standing = pins.filter(p => !p.gone);
     let targetX = 240;
 
     if (standing.length === 10) {
-      // 1er lancer : vise la poche 1-3 (légèrement à droite du centre) avec un léger effet
-      targetX = 248;
+      targetX = 250;
     } else if (standing.length > 0) {
-      // 2e lancer : vise le barycentre des quilles restantes
-      const avgX = standing.reduce((acc, p) => acc + p.ox, 0) / standing.length;
-      targetX = avgX;
+      targetX = standing.reduce((acc, p) => acc + p.ox, 0) / standing.length;
     }
 
-    // Erreur contrôlée selon le niveau du Bot
     const randErr = () => (Math.random() - 0.5) * 2;
     const chosenPx = clamp(targetX + randErr() * cfg.errPos * 0.6, LL + BR + 12, LR - BR - 12);
     const dx = targetX - chosenPx;
     const dy = 250 - 735;
     const idealAngle = clamp(Math.atan2(dx, -dy) + randErr() * cfg.errAng, -0.38, 0.38);
-    const idealPower = clamp(0.88 + randErr() * cfg.errPow, 0.45, 0.99);
-    const idealSpin = clamp((-idealAngle * 0.8 + randErr() * (1 - cfg.spinSkill) * 0.5) * cfg.spinSkill, -0.75, 0.75);
+    const idealPower = clamp(0.91 + randErr() * cfg.errPow, 0.5, 0.99);
+    const idealSpin = clamp((-idealAngle * 0.95 + randErr() * (1 - cfg.spinSkill) * 0.5) * cfg.spinSkill, -0.85, 0.85);
 
     botPlan = {
       timer: 0,
@@ -777,7 +776,7 @@
       targetAng: idealAngle,
       targetPow: idealPower,
       targetSpin: idealSpin,
-      phase: 'move' // 'move' -> 'angle' -> 'power'
+      phase: 'move'
     };
   }
 
@@ -831,22 +830,25 @@
   }
 
   function burst(x, y, n, col, s = 4) {
-    for (let i = 0; i < n; i++) {
+    if (parts.length > 130) parts.splice(0, parts.length - 130);
+    const count = Math.min(n, 22);
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * 6.283;
       const v = Math.random() * s + 0.6;
       parts.push({
         x, y,
         vx: Math.cos(a) * v,
         vy: Math.sin(a) * v,
-        l: 28 + Math.random() * 28,
+        l: 22 + Math.random() * 20,
         c: col,
-        s: Math.random() * 3.2 + 1.2
+        s: Math.random() * 2.8 + 1.2
       });
     }
   }
 
   function pop(x, y, t, c = '#0ff') {
-    texts.push({ x, y, t, c, l: 64 });
+    if (texts.length > 16) texts.shift();
+    texts.push({ x, y, t, c, l: 60 });
   }
 
   function quit() {
@@ -901,11 +903,10 @@
     tone(180, 0.35, 'sawtooth', 0.08, -100);
 
     const isPerfect = power > 0.86 && power < 0.98;
-    // Zone verte (86% - 98%) : puissance parfaite
     if (isPerfect) {
       say('PUISSANCE PARFAITE', '#0f8', 55, !FIN ? '+25 PTS BONUS' : 'TRAJECTOIRE OPTIMALE');
       if (!FIN) PL[cp].bonus += 25;
-      flash = 0.25;
+      flash = 0.22;
       flashCol = '#00ff88';
       tone(987.77, 0.12, 'triangle', 0.08);
     }
@@ -953,7 +954,6 @@
     return 0.01;
   }
 
-  // Détection d'un Split (quille 1 tombée et quilles restantes espacées)
   function checkSplit(standing) {
     if (standing.length < 2 || standing.length > 4) return false;
     const headPinUp = standing.some(p => p.id === 1);
@@ -1026,7 +1026,6 @@
       done = left === 0 || fr.length === 2;
     }
 
-    // Gestion des annonces, séries, stats et effets
     const isStrike = sb === 10 && n === 10;
     const isSpare = !isStrike && sb < 10 && left === 0;
 
@@ -1053,13 +1052,13 @@
       }
 
       say(title, '#ff0', 115, sub);
-      shake = 24;
-      flash = 0.45;
+      shake = 22;
+      flash = 0.4;
       flashCol = '#ff00ff';
       arp([523.25, 659.25, 783.99, 1046.5, 1318.5], 55, 'sawtooth', 0.075);
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         setTimeout(() => {
-          burst(80 + Math.random() * 320, 150 + Math.random() * 230, 38, ['#f0f', '#0ff', '#ff0', '#0f8'][i % 4], 6.5);
+          burst(80 + Math.random() * 320, 150 + Math.random() * 230, 22, ['#f0f', '#0ff', '#ff0', '#0f8'][i % 4], 6);
         }, i * 110);
       }
     } else if (isSpare) {
@@ -1067,11 +1066,11 @@
       pl.streak = 0;
       if (np === 1) stats.spares++;
       say('SPARE !', '#0ff', 95, 'BELLE RECUPERATION');
-      shake = 11;
-      flash = 0.3;
+      shake = 10;
+      flash = 0.28;
       flashCol = '#00ffff';
       arp([440, 554.37, 659.25, 880], 65, 'square', 0.07);
-      burst(240, 250, 55, '#0ff', 5.5);
+      burst(240, 250, 24, '#0ff', 5);
     } else {
       if (done) {
         pl.streak = 0;
@@ -1124,31 +1123,37 @@
       shouldResetRack = true;
     }
 
-    // Déclenche la balayeuse mécanique néon pour nettoyer les quilles tombées
     triggerSweeper(shouldResetRack);
-
     ball.x = -100;
     st = 'between';
     wait = 96;
   }
 
+  // Physique exigeante : la boule devie et perd de l'energie a l'impact des quilles
   function ballPins() {
     if (!ball.rolling || gutter) return;
-    for (const p of pins) {
+    for (let i = 0; i < pins.length; i++) {
+      const p = pins[i];
       if (p.gone) continue;
       const o = { x: p.x, y: p.y, r: PR, vx: p.vx, vy: p.vy };
-      const v = collide(ball, o, 5.2, 1, 0.68);
+      const v = collide(ball, o, 3.1, 1, 0.56);
       if (v) {
-        p.x = o.x; p.y = o.y; p.vx = o.vx; p.vy = o.vy;
-        if (v > 0.25) {
-          p.imp += v;
-          p.wob = Math.min(3.5, Math.max(p.wob, v / 2.8));
+        p.x = o.x; p.y = o.y;
+        const latBoost = clamp(ball.spin * 0.45, -0.45, 0.45);
+        p.vx = o.vx * 0.86 + latBoost * v * 0.35;
+        p.vy = o.vy * 0.92;
+        ball.vx *= 0.94;
+        ball.vy *= 0.95;
+
+        if (v > 0.35) {
+          p.imp += v * 0.85;
+          p.wob = Math.min(3.5, Math.max(p.wob, v / 3.2));
           if (!p.hit) {
             p.hit = true;
-            burst(p.x, p.y, 7, '#fff', 3.5);
+            burst(p.x, p.y, 5, '#fff', 3.2);
             tone(280 + Math.random() * 480, 0.075, 'square', 0.055);
           }
-          shake = Math.max(shake, Math.min(9, v * 1.1));
+          shake = Math.max(shake, Math.min(8, v * 0.95));
         }
       }
     }
@@ -1156,16 +1161,16 @@
 
   function ballBumpers() {
     if (!ball.rolling || gutter) return;
-    for (const b of bumpers) {
+    for (let i = 0; i < bumpers.length; i++) {
+      const b = bumpers[i];
       if (b.hitCd > 0) b.hitCd--;
       const bo = { x: b.x, y: b.y, r: b.r, vx: 0, vy: 0 };
       const v = collide(ball, bo, 1, 100, 0.92);
       if (v > 0 && b.hitCd === 0) {
         b.hitCd = 14;
         ball.bumperHits++;
-        // Assure que la boule continue toujours vers les quilles
         if (ball.vy > -4.5) ball.vy = -6.5;
-        burst(b.x, b.y, 16, '#f0f', 4.5);
+        burst(b.x, b.y, 14, '#f0f', 4.5);
         pop(b.x, b.y - 10, '+30', '#f0f');
         if (!FIN) PL[cp].bonus += 30;
         tone(880, 0.12, 'sawtooth', 0.07, 220);
@@ -1174,63 +1179,70 @@
     }
   }
 
+  // Inertie de quilles exigeante : un tir mal place laisse des quilles debout (7, 10, splits)
   function pinPhysics() {
-    const live = pins.filter(p => !p.gone);
+    const live = [];
+    for (let i = 0; i < pins.length; i++) {
+      if (!pins[i].gone) live.push(pins[i]);
+    }
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i], b = live[j];
         const A = { x: a.x, y: a.y, r: PR, vx: a.vx, vy: a.vy };
         const B = { x: b.x, y: b.y, r: PR, vx: b.vx, vy: b.vy };
-        const v = collide(A, B, 1, 1, 0.78);
+        const v = collide(A, B, 1, 1, 0.64);
         if (v) {
           a.x = A.x; a.y = A.y; a.vx = A.vx; a.vy = A.vy;
           b.x = B.x; b.y = B.y; b.vx = B.vx; b.vy = B.vy;
-          if (v > 0.3) {
-            a.imp += v;
-            b.imp += v;
-            a.wob = Math.max(a.wob, Math.min(3.5, v / 2.8));
-            b.wob = Math.max(b.wob, Math.min(3.5, v / 2.8));
+          if (v > 0.35) {
+            a.imp += v * 0.78;
+            b.imp += v * 0.78;
+            a.wob = Math.max(a.wob, Math.min(3.5, v / 3.2));
+            b.wob = Math.max(b.wob, Math.min(3.5, v / 3.2));
           }
-          if (v > 1.4) tone(240 + Math.random() * 420, 0.05, 'square', 0.032);
+          if (v > 1.6) tone(240 + Math.random() * 420, 0.05, 'square', 0.03);
         }
       }
     }
 
-    live.forEach(p => {
+    for (let i = 0; i < live.length; i++) {
+      const p = live[i];
       p.x += p.vx / 3;
       p.y += p.vy / 3;
-      if (p.x < 64) { p.x = 64; p.vx = Math.abs(p.vx) * 0.45; }
-      if (p.x > 416) { p.x = 416; p.vx = -Math.abs(p.vx) * 0.45; }
-      if (p.y < 46) { p.y = 46; p.vy = Math.abs(p.vy) * 0.45; }
+      if (p.x < 64) { p.x = 64; p.vx = Math.abs(p.vx) * 0.4; }
+      if (p.x > 416) { p.x = 416; p.vx = -Math.abs(p.vx) * 0.4; }
+      if (p.y < 46) { p.y = 46; p.vy = Math.abs(p.vy) * 0.4; }
 
-      if (!p.down && (p.imp > 3.1 || Math.hypot(p.x - p.ox, p.y - p.oy) > 14.5)) {
+      if (!p.down && (p.imp > 4.65 || Math.hypot(p.x - p.ox, p.y - p.oy) > 19.5)) {
         p.down = true;
         p.dir = p.vx < 0 ? -1 : 1;
-        burst(p.x, p.y, 9, '#ff0', 3.4);
+        burst(p.x, p.y, 7, '#ff0', 3.2);
       }
       if (p.down) p.ang += (p.dir * 1.55 - p.ang) * 0.045;
-      else p.wob *= 0.985;
-    });
+      else p.wob *= 0.975;
+    }
   }
 
   function update() {
     tk++;
-    bumpers.forEach(b => {
+    for (let i = 0; i < bumpers.length; i++) {
+      const b = bumpers[i];
       b.x = b.cx + Math.sin((tk / 60) * b.sp + b.ph) * b.amp;
-    });
+    }
 
     if (shake > 0) shake *= 0.9;
     if (flash > 0) flash = Math.max(0, flash - 0.025);
     if (msgT > 0) msgT--;
     if (copiedToast > 0) copiedToast--;
 
-    // Mise à jour de la balayeuse mécanique
     if (sweeper.active) {
       sweeper.t++;
       const half = sweeper.dur / 2;
       if (sweeper.t >= half && !sweeper.cleared) {
         sweeper.cleared = true;
-        pins.forEach(p => { if (p.down) p.gone = true; });
+        for (let i = 0; i < pins.length; i++) {
+          if (pins[i].down) pins[i].gone = true;
+        }
         if (sweeper.resetRack) rack();
       }
       if (sweeper.t >= sweeper.dur) {
@@ -1240,7 +1252,6 @@
 
     if (st === 'aim') {
       if (isBotTurn() && botPlan) {
-        // Exécution fluide des décisions du Bot
         botPlan.timer++;
         if (botPlan.phase === 'move') {
           px += (botPlan.targetPx - px) * 0.14;
@@ -1282,7 +1293,6 @@
           powPh += 0.072 * spd();
           power = (Math.sin(powPh - 1.57) + 1) / 2;
         }
-        // Envoi régulier de la visée en mode En Ligne P2P
         if (playType === 'online' && tk % 3 === 0) {
           netSend({ type: 'aim', px, aimLock, aimA, power });
         }
@@ -1300,11 +1310,10 @@
       }
 
       if (ball.rolling && !gutter) {
-        if (ball.y > 290 && canLocalControl() || isBotTurn()) {
-          ball.spin = clamp(ball.spin + steer * 0.028, -1, 1);
+        if ((ball.y > 290 && canLocalControl()) || isBotTurn()) {
+          ball.spin = clamp(ball.spin + steer * 0.026, -1, 1);
         }
-        // Zone huilée (y > 470) : glisse plus douce ; zone sèche (y <= 470) : l'effet accroche fort !
-        ball.vx += ball.spin * (ball.y > 470 ? 0.008 : 0.078);
+        ball.vx += ball.spin * (ball.y > 470 ? 0.007 : 0.085);
         ball.rot += Math.hypot(ball.vx, ball.vy) * 0.045;
       }
 
@@ -1343,15 +1352,16 @@
         pinPhysics();
       }
 
-      pins.forEach(p => {
-        const k = p.down ? 0.96 : 0.985;
+      for (let i = 0; i < pins.length; i++) {
+        const p = pins[i];
+        const k = p.down ? 0.955 : 0.98;
         p.vx *= k;
         p.vy *= k;
-        p.imp *= 0.995;
-      });
+        p.imp *= 0.985;
+      }
 
-      ball.vx *= 0.998;
-      ball.vy *= 0.998;
+      ball.vx *= 0.9975;
+      ball.vy *= 0.9975;
       const sp = Math.hypot(ball.vx, ball.vy);
 
       if (ball.rolling && (ball.y < 28 || sp < 0.4)) {
@@ -1364,7 +1374,6 @@
       if (!ball.rolling && calm) calmT++;
       else calmT = 0;
 
-      // En ligne, seul le joueur actif valide la fin de lancer (avec sécurité timeout)
       if (playType === 'online' && !isMyNetTurn()) {
         if (settleT > 760) endThrow();
       } else if (calmT > 24 || settleT > 700) {
@@ -1391,44 +1400,51 @@
       }
     }
 
-    // Particules & traînée de la boule
-    parts.forEach(p => {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
       p.x += p.vx;
       p.y += p.vy;
       p.vy += 0.06;
       p.l--;
-    });
-    parts = parts.filter(p => p.l > 0);
+      if (p.l <= 0) parts.splice(i, 1);
+    }
 
-    texts.forEach(t => {
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const t = texts[i];
       t.y -= 0.75;
       t.l--;
-    });
-    texts = texts.filter(t => t.l > 0);
+      if (t.l <= 0) texts.splice(i, 1);
+    }
 
     if (ball && ball.rolling) {
       const sk = SKINS[stats.skin] || SKINS[0];
-      trails.push({ x: ball.x, y: ball.y, r: ball.r, l: 16, c: gutter ? '#f35' : sk.trail });
       if (tk % 2 === 0) {
-        parts.push({
-          x: ball.x + (Math.random() - 0.5) * 8,
-          y: ball.y + 8,
-          vx: (Math.random() - 0.5) * 0.8,
-          vy: 0.6,
-          l: 18,
-          c: gutter ? '#f35' : sk.trail,
-          s: 2.8
-        });
+        trails.push({ x: ball.x, y: ball.y, r: ball.r, l: 14, c: gutter ? '#f35' : sk.trail });
+        if (trails.length > 10) trails.shift();
+        if (parts.length < 120) {
+          parts.push({
+            x: ball.x + (Math.random() - 0.5) * 8,
+            y: ball.y + 8,
+            vx: (Math.random() - 0.5) * 0.8,
+            vy: 0.6,
+            l: 16,
+            c: gutter ? '#f35' : sk.trail,
+            s: 2.6
+          });
+        }
       }
     }
-    trails.forEach(t => t.l--);
-    trails = trails.filter(t => t.l > 0);
+
+    for (let i = trails.length - 1; i >= 0; i--) {
+      trails[i].l--;
+      if (trails[i].l <= 0) trails.splice(i, 1);
+    }
 
     updateRollAudio();
   }
 
   /* ==========================================================================
-     5. RENDU GRAPHIQUE (PSEUDO-3D SYNTHWAVE)
+     6. RENDU OPTIMISE & ECRANS
      ========================================================================== */
   const VS = 1.25, S0 = 1 / 2.2;
   function P(x, y) {
@@ -1437,11 +1453,11 @@
     return [240 + (x - 240) * s * VS, 92 + 608 * (s - S0) / (1 - S0), s * VS];
   }
 
-  function txt(s, x, y, size, col, al = 'center', glow = true, out = false) {
+  function txt(s, x, y, size, col, al = 'center', glow = false, out = false) {
     g.font = size + 'px ' + FONT;
     g.textAlign = al;
     if (out) {
-      g.lineWidth = 6;
+      g.lineWidth = 5;
       g.strokeStyle = '#05010f';
       g.lineJoin = 'round';
       g.strokeText(s, x, y);
@@ -1449,10 +1465,10 @@
     g.fillStyle = col;
     if (glow) {
       g.shadowColor = col;
-      g.shadowBlur = 12;
+      g.shadowBlur = 10;
     }
     g.fillText(s, x, y);
-    g.shadowBlur = 0;
+    if (glow) g.shadowBlur = 0;
   }
 
   function quad(a, fill) {
@@ -1466,13 +1482,15 @@
   function line(a, b, col, w, blur = 0) {
     g.strokeStyle = col;
     g.lineWidth = w;
-    g.shadowColor = col;
-    g.shadowBlur = blur;
+    if (blur) {
+      g.shadowColor = col;
+      g.shadowBlur = blur;
+    }
     g.beginPath();
     g.moveTo(a[0], a[1]);
     g.lineTo(b[0], b[1]);
     g.stroke();
-    g.shadowBlur = 0;
+    if (blur) g.shadowBlur = 0;
   }
 
   function btn(x, y, w, h, l, sel, fn, sz = 9, c = '#0ff', locked = false) {
@@ -1482,25 +1500,13 @@
     g.fillRect(x, y, w, h);
     g.strokeStyle = locked ? '#666' : c;
     g.lineWidth = hv || sel ? 2.5 : 1.5;
-    g.shadowColor = locked ? 'transparent' : c;
-    g.shadowBlur = sel || hv ? 14 : 0;
     g.strokeRect(x, y, w, h);
-    g.shadowBlur = 0;
     txt(l, x + w / 2, y + h / 2 + sz / 2 - 1, sz, locked ? '#777' : (sel ? '#05010f' : '#fff'), 'center', false);
   }
 
   function drawSynthSun() {
     const cx = 240, cy = 145, R = 68;
     g.save();
-    // Halo autour du soleil
-    const halo = g.createRadialGradient(cx, cy, 10, cx, cy, 180);
-    halo.addColorStop(0, 'rgba(255, 0, 200, 0.45)');
-    halo.addColorStop(0.5, 'rgba(130, 0, 255, 0.15)');
-    halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    g.fillStyle = halo;
-    g.fillRect(0, 86, W, 220);
-
-    // Disque solaire avec bandes synthwave
     g.beginPath();
     g.arc(cx, cy, R, Math.PI, 0);
     g.closePath();
@@ -1513,18 +1519,15 @@
     g.fillStyle = sunGr;
     g.fillRect(cx - R, cy - R, R * 2, R);
 
-    // Découpes horizontales animées dans le soleil
     g.fillStyle = '#180542';
     for (let i = 0; i < 6; i++) {
       const y = cy - 6 - i * 10 + ((tk * 0.15) % 10);
-      const h = 1.5 + i * 0.45;
-      g.fillRect(cx - R, y, R * 2, h);
+      g.fillRect(cx - R, y, R * 2, 1.5 + i * 0.45);
     }
     g.restore();
   }
 
   function drawLane() {
-    // Ciel synthwave
     const bg = g.createLinearGradient(0, 0, 0, H);
     bg.addColorStop(0, '#0e032e');
     bg.addColorStop(0.28, '#2b0963');
@@ -1533,17 +1536,15 @@
     g.fillStyle = bg;
     g.fillRect(0, 0, W, H);
 
-    // Étoiles scintillantes
-    STARS.forEach(st => {
+    for (let i = 0; i < STARS.length; i++) {
+      const st = STARS[i];
       const a = 0.35 + 0.65 * Math.abs(Math.sin(tk * 0.04 + st.ph));
       g.fillStyle = `rgba(255, 255, 255, ${a.toFixed(2)})`;
       g.fillRect(st.x, st.y, st.s, st.s);
-    });
+    }
 
-    // Soleil rétro au fond de l'horizon
     drawSynthSun();
 
-    // Montagnes wireframe minimalistes sur les côtés
     g.strokeStyle = '#ff00ff44';
     g.lineWidth = 1.5;
     g.beginPath();
@@ -1551,11 +1552,9 @@
     g.moveTo(305, 148); g.lineTo(345, 122); g.lineTo(395, 140); g.lineTo(440, 114); g.lineTo(480, 148);
     g.stroke();
 
-    // Gouttières latérales
     quad([P(LL - 34, 40), P(LL, 40), P(LL, 740), P(LL - 34, 740)], '#04010d');
     quad([P(LR, 40), P(LR + 34, 40), P(LR + 34, 740), P(LR, 740)], '#04010d');
 
-    // Chevrons lumineux animés dans les gouttières
     g.strokeStyle = gutter ? '#ff2244cc' : '#ff00ff88';
     g.lineWidth = 2;
     for (let k = 0; k < 14; k++) {
@@ -1571,34 +1570,27 @@
       });
     }
 
-    // Surface de la piste
     const gr = g.createLinearGradient(0, 92, 0, 700);
     gr.addColorStop(0, '#180747');
     gr.addColorStop(0.45, '#3b1485');
     gr.addColorStop(1, '#5d21c2');
     quad([P(LL, 40), P(LR, 40), P(LR, 740), P(LL, 740)], gr);
 
-    // Reflet central (zone huilée jusqu'à y = 470)
     const oilGr = g.createLinearGradient(0, 260, 0, 740);
     oilGr.addColorStop(0, 'rgba(0, 255, 255, 0.02)');
     oilGr.addColorStop(0.5, 'rgba(0, 255, 255, 0.09)');
     oilGr.addColorStop(1, 'rgba(255, 0, 255, 0.14)');
     quad([P(LL + 35, 470), P(LR - 35, 470), P(LR - 25, 740), P(LL + 25, 740)], oilGr);
 
-    // Lattes du parquet
     for (let i = 1; i < 6; i++) {
       line(P(LL + i * 50, 40), P(LL + i * 50, 740), '#ffffff18', 1);
     }
-    // Ondes de vitesse sur la piste
     for (let k = 0; k < 7; k++) {
       const y = 40 + ((tk * 2.4 + k * 100) % 700);
       line(P(LL, y), P(LR, y), '#ffffff0e', 2);
     }
 
-    // 7 flèches de visée en V sur la piste
     g.fillStyle = '#ff0c';
-    g.shadowColor = '#ff0';
-    g.shadowBlur = 8;
     for (let i = 0; i < 7; i++) {
       const [x, y, s] = P(LL + 37.5 * (i + 1), 470 + Math.abs(i - 3) * 16);
       const z = 7 * s;
@@ -1609,9 +1601,7 @@
       g.closePath();
       g.fill();
     }
-    g.shadowBlur = 0;
 
-    // Points de repérage
     g.fillStyle = '#fff9';
     [1, 2, 3, 4, 5].forEach(i => {
       const [x, y, s] = P(LL + i * 50, 590);
@@ -1620,13 +1610,11 @@
       g.fill();
     });
 
-    // Bordures néon cyan & ligne de faute magenta
-    line(P(LL, 40), P(LL, 740), '#0ff', 4, 16);
-    line(P(LR, 40), P(LR, 740), '#0ff', 4, 16);
-    line(P(LL, 690), P(LR, 690), '#f0f', 4, 14);
+    line(P(LL, 40), P(LL, 740), '#0ff', 4, 8);
+    line(P(LR, 40), P(LR, 740), '#0ff', 4, 8);
+    line(P(LL, 690), P(LR, 690), '#f0f', 4, 8);
     quad([P(LL, 470), P(LR, 470), P(LR, 740), P(LL, 740)], '#ffffff09');
 
-    // Portique fond de piste (Pin Deck)
     const a = P(LL - 34, 40), b = P(LR + 34, 40);
     g.fillStyle = '#07021a';
     g.fillRect(a[0], 86, b[0] - a[0], a[1] - 86);
@@ -1637,36 +1625,29 @@
 
   function drawSweeper() {
     if (!sweeper.active) return;
-    // Descente puis remontée de la barre balayeuse
     const prog = Math.sin((sweeper.t / sweeper.dur) * Math.PI);
     const wy = 160 + prog * 135;
     const left = P(LL - 10, wy);
     const right = P(LR + 10, wy);
     const h = 16 * left[2];
 
-    g.save();
     g.fillStyle = '#120536';
     g.strokeStyle = '#00ffff';
     g.lineWidth = 2.5;
-    g.shadowColor = '#00ffff';
-    g.shadowBlur = 16;
     g.fillRect(left[0], left[1] - h, right[0] - left[0], h);
     g.strokeRect(left[0], left[1] - h, right[0] - left[0], h);
 
-    // Bandes de danger néon sur la balayeuse
     g.fillStyle = '#ff00ff';
     const seg = (right[0] - left[0]) / 8;
     for (let i = 0; i < 8; i += 2) {
       g.fillRect(left[0] + i * seg + 4, left[1] - h + 3, seg - 8, h - 6);
     }
-    g.restore();
   }
 
   function drawPin(p) {
     const [x0, y0, s] = P(p.x, p.y);
     const r = PR * s;
 
-    // Ombre portée
     g.fillStyle = 'rgba(0, 0, 0, 0.5)';
     g.beginPath();
     g.ellipse(x0, y0 + r * 0.25, r * 1.15, r * 0.45, 0, 0, 7);
@@ -1682,21 +1663,15 @@
     gr.addColorStop(0, '#c8d6e5');
     gr.addColorStop(0.4, '#ffffff');
     gr.addColorStop(1, '#8395a7');
-
-    g.shadowColor = p.down ? '#ff0' : '#fff';
-    g.shadowBlur = p.down ? 10 : 7;
     g.fillStyle = gr;
 
-    // Corps & tête de la quille
     g.beginPath();
     g.ellipse(0, -h * 0.34, r * 0.9, h * 0.34, 0, 0, 7);
     g.fill();
     g.beginPath();
     g.arc(0, -h * 0.84, r * 0.5, 0, 7);
     g.fill();
-    g.shadowBlur = 0;
 
-    // Colliers rouges néon
     g.fillStyle = '#ff1e56';
     g.beginPath();
     g.ellipse(0, -h * 0.66, r * 0.7, r * 0.2, 0, 0, 7);
@@ -1722,9 +1697,6 @@
     gr.addColorStop(0, '#ffffff');
     gr.addColorStop(0.35, b.hitCd > 0 ? '#ffff00' : '#ff44ff');
     gr.addColorStop(1, '#8800aa');
-
-    g.shadowColor = b.hitCd > 0 ? '#ff0' : '#f0f';
-    g.shadowBlur = 20;
     g.fillStyle = gr;
     g.beginPath();
     g.arc(x, y - r * 0.3, r * pulse, 0, 7);
@@ -1733,49 +1705,41 @@
     g.strokeStyle = '#fff';
     g.lineWidth = 1.5;
     g.stroke();
-    g.shadowBlur = 0;
   }
 
   function drawBall() {
     if (!ball || !isFinite(ball.x) || !isFinite(ball.y) || ball.x < 0) return;
     const sk = SKINS[stats.skin] || SKINS[0];
 
-    // Traînée lumineuse derrière la boule
-    trails.forEach(tr => {
+    for (let i = 0; i < trails.length; i++) {
+      const tr = trails[i];
       const [tx, ty, ts] = P(tr.x, tr.y);
-      const rad = tr.r * ts * (tr.l / 16) * 0.85;
-      g.globalAlpha = (tr.l / 16) * 0.35;
+      const rad = tr.r * ts * (tr.l / 14) * 0.85;
+      g.globalAlpha = (tr.l / 14) * 0.32;
       g.fillStyle = tr.c;
       g.beginPath();
       g.arc(tx, ty - rad * 0.3, rad, 0, 7);
       g.fill();
-    });
+    }
     g.globalAlpha = 1;
 
     const [x, y, s] = P(ball.x, ball.y);
     const r = BR * s;
 
-    // Ombre
     g.fillStyle = 'rgba(0, 0, 0, 0.55)';
     g.beginPath();
     g.ellipse(x, y + r * 0.7, r * 1.15, r * 0.45, 0, 0, 7);
     g.fill();
 
-    // Sphère de la boule
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.8, 2, x, y - r * 0.3, r * 1.2);
     gr.addColorStop(0, sk.c1);
     gr.addColorStop(0.32, sk.c2);
     gr.addColorStop(1, sk.c3);
-
-    g.shadowColor = sk.glow;
-    g.shadowBlur = 22;
     g.fillStyle = gr;
     g.beginPath();
     g.arc(x, y - r * 0.3, r, 0, 7);
     g.fill();
-    g.shadowBlur = 0;
 
-    // Trous de doigts animés avec la rotation
     g.save();
     g.translate(x, y - r * 0.3);
     g.rotate(ball.rot + ball.spin * 0.6);
@@ -1794,9 +1758,6 @@
     const pts = [];
 
     g.fillStyle = col;
-    g.shadowColor = col;
-    g.shadowBlur = 10;
-
     for (let i = 1; i <= 14; i++) {
       const wy = ball.y + dy * i * 22;
       if (wy < 60) break;
@@ -1824,10 +1785,8 @@
       g.fill();
       g.restore();
     }
-    g.shadowBlur = 0;
   }
 
-  // Mini-radar des quilles restantes en haut à droite pendant la visée
   function drawPinRadar() {
     if (st !== 'aim') return;
     const rx = 420, ry = 102, rw = 52, rh = 56;
@@ -1837,19 +1796,15 @@
     g.lineWidth = 1.5;
     g.strokeRect(rx, ry, rw, rh);
 
-    pins.forEach(p => {
+    for (let i = 0; i < pins.length; i++) {
+      const p = pins[i];
       const px = rx + rw / 2 + (p.ox - 240) * 0.36;
       const py = ry + rh - 10 - (275 - p.oy) * 0.38;
       g.beginPath();
       g.arc(px, py, 3.2, 0, 7);
-      if (p.gone) {
-        g.fillStyle = '#ffffff22';
-        g.fill();
-      } else {
-        g.fillStyle = p.id === 1 ? '#ff0' : '#0ff';
-        g.fill();
-      }
-    });
+      g.fillStyle = p.gone ? '#ffffff22' : (p.id === 1 ? '#ff0' : '#0ff');
+      g.fill();
+    }
   }
 
   function playerLabel(idx, short = false) {
@@ -1911,14 +1866,14 @@
         }
       }
     });
-    line([0, 90], [W, 90], '#0ff', 3, 10);
+    line([0, 90], [W, 90], '#0ff', 3, 6);
   }
 
   function hud() {
     drawBoard();
     g.fillStyle = '#0b0428';
     g.fillRect(0, 706, W, 94);
-    line([0, 706], [W, 706], '#f0f', 3, 10);
+    line([0, 706], [W, 706], '#f0f', 3, 6);
 
     btn(8, 770, 58, 22, 'MENU', false, quit, 7, '#f0f');
     btn(414, 770, 58, 22, mute ? 'MUET' : 'SON', false, () => {
@@ -1936,10 +1891,8 @@
     }
 
     if (st === 'aim') {
-      // Jauge de puissance
       g.fillStyle = '#ffffff18';
       g.fillRect(40, 714, 400, 18);
-      // Zone verte parfaite
       g.fillStyle = '#0f85';
       g.fillRect(40 + 400 * 0.86, 714, 400 * 0.12, 18);
 
@@ -1968,7 +1921,6 @@
         txt(aimLock ? 'VISE LA ZONE VERTE !' : 'CLIC / ESPACE : BLOQUER ANGLE', W / 2, 793, 7, '#ff0');
       }
     } else if (st === 'roll') {
-      // Jauge d'effet (spin) en direct pendant le roulement
       g.fillStyle = '#ffffff18';
       g.fillRect(120, 716, 240, 14);
       const mid = 240;
@@ -1989,7 +1941,7 @@
         txt(gutter ? 'GOUTTIERE...' : 'EFFET EN VOL : < > OU GLISSE', W / 2, 778, 8, gutter ? '#f35' : '#0ff');
       }
     } else if (st === 'between') {
-      txt('PREPARE-TOI...', W / 2, 778, 8, '#fff8');
+      txt('PREPARE TOI...', W / 2, 778, 8, '#fff8');
     }
   }
 
@@ -2001,7 +1953,6 @@
   function drawMenu() {
     overlay(0.86);
 
-    // Badge en temps reel : nombre de joueurs actuellement sur le site
     const pulse = 0.5 + 0.5 * Math.sin(tk * 0.12);
     g.fillStyle = 'rgba(0, 255, 136, 0.12)';
     g.fillRect(110, 14, 260, 24);
@@ -2015,12 +1966,11 @@
     txt(onlineCount + (onlineCount > 1 ? ' JOUEURS EN LIGNE' : ' JOUEUR EN LIGNE'), 248, 30, 7.5, '#0f8', 'center', false);
 
     const y = Math.sin(tk / 20) * 4;
-    txt('NOL', W / 2, 114 + y, 56, '#0ff');
-    txt('BOWLING', W / 2, 178 + y, 46, '#f0f');
-    txt('SYNTHWAVE ARCADE EDITION', W / 2, 210, 8.5, '#ff0');
+    txt('NOL', W / 2, 114 + y, 56, '#0ff', 'center', true);
+    txt('BOWLING', W / 2, 178 + y, 46, '#f0f', 'center', true);
+    txt('ARCADE EDITION', W / 2, 210, 8.5, '#ff0', 'center', false);
 
-    // Selection du mode
-    txt('MODE DE JEU', W / 2, 250, 8, mrow === 0 ? '#ff0' : '#0ff');
+    txt('MODE DE JEU', W / 2, 250, 8, mrow === 0 ? '#ff0' : '#0ff', 'center', false);
     MODES.forEach((m, i) => {
       btn(24 + i * 148, 260, 136, 36, m.n, mode === i, () => {
         mode = i;
@@ -2030,8 +1980,7 @@
     });
     txt(MODES[mode].d, W / 2, 314, 6.8, '#fffb', 'center', false);
 
-    // Selection du type d'adversaire (4 options)
-    txt('ADVERSAIRE', W / 2, 346, 8, mrow === 1 ? '#ff0' : '#f0f');
+    txt('ADVERSAIRE', W / 2, 346, 8, mrow === 1 ? '#ff0' : '#f0f', 'center', false);
     const P_TYPES = [
       ['SOLO', 'solo'],
       ['VS BOT', 'bot'],
@@ -2047,7 +1996,6 @@
       }, 7.2, val === 'online' ? '#0f8' : '#f0f');
     });
 
-    // Sous-options dynamiques selon le type selectionne (Difficulte Bot ou info P2P)
     if (playType === 'bot') {
       BOT_LEVELS.forEach((b, i) => {
         btn(24 + i * 148, 402, 136, 30, b.n, botDiff === i, () => {
@@ -2062,11 +2010,10 @@
     } else if (playType === 'local') {
       txt('2 JOUEURS SUR LE MEME ECRAN (TOUR A TOUR)', W / 2, 428, 6.8, '#fffb', 'center', false);
     } else {
-      txt('JOUE EN SOLO ET BATS TON RECORD INFINI', W / 2, 428, 6.8, '#fffb', 'center', false);
+      txt('POCHE 1 3 + EFFET POUR UN VRAI STRIKE', W / 2, 428, 6.8, '#fffb', 'center', false);
     }
 
-    // Selecteur de Skin de Boule
-    txt('BOULE ARCADE', W / 2, 476, 8, '#0f8');
+    txt('BOULE ARCADE', W / 2, 476, 8, '#0f8', 'center', false);
     SKINS.forEach((sk, i) => {
       const unlocked = stats.strikes >= sk.req;
       const bx = 22 + i * 111;
@@ -2095,7 +2042,6 @@
       txt(unlocked ? sk.name.split(' ')[1] : sk.req + 'X', cx, 531, 6.5, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
     });
 
-    // Boutons d'action principaux
     const mainLabel = playType === 'online' ? 'SALON EN LIGNE' : 'JOUER';
     btn(90, 558, 300, 52, mainLabel, Math.floor(tk / 28) % 2 === 0, () => {
       if (playType === 'online') {
@@ -2117,13 +2063,12 @@
       mute = !mute;
     }, 8, '#f0f');
 
-    // Mini guide rapide
     [
       '1. PLACE LA BOULE • 2. BLOQUE L ANGLE',
       '3. VISE LE VERT • 4. EFFET EN VOL < >'
     ].forEach((s, i) => txt(s, W / 2, 690 + i * 20, 7, '#fff9', 'center', false));
 
-    txt('RECORD INFINI : ' + String(stats.best).padStart(5, '0'), W / 2, 768, 8.5, '#ff0', 'center', true);
+    txt('RECORD INFINI : ' + String(stats.best).padStart(5, '0'), W / 2, 768, 8.5, '#ff0', 'center', false);
   }
 
   function copyRoomCode() {
@@ -2139,40 +2084,37 @@
 
   function drawOnline() {
     overlay(0.92);
-    txt('MULTIJOUEUR P2P', W / 2, 105, 20, '#0f8');
-    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS ACTIFS SUR LE SITE' : ' JOUEUR ACTIF SUR LE SITE'), W / 2, 134, 7.5, '#0ff');
+    txt('MULTIJOUEUR P2P', W / 2, 105, 20, '#0f8', 'center', true);
+    txt(onlineCount + (onlineCount > 1 ? ' JOUEURS ACTIFS SUR LE SITE' : ' JOUEUR ACTIF SUR LE SITE'), W / 2, 134, 7.5, '#0ff', 'center', false);
 
-    // Champ pseudo toujours visible avant de lancer la partie
-    txt('TON PSEUDO (8 CAR. MAX) :', W / 2, 182, 8, '#f0f');
-    // Le champ HTML #nickInput est positionne juste ici (top: 27.5%)
+    txt('TON PSEUDO (8 CAR. MAX) :', W / 2, 182, 8, '#f0f', 'center', false);
 
     if (onlineSub === 'choice') {
-      txt('MODE SELECTIONNE : ' + MODES[mode].n, W / 2, 272, 8, '#ff0');
+      txt('MODE SELECTIONNE : ' + MODES[mode].n, W / 2, 272, 8, '#ff0', 'center', false);
       btn(70, 305, 340, 56, 'CREER UN SALON', true, hostRoom, 12, '#0ff');
       txt('OBTIENS UN CODE A PARTAGER', W / 2, 378, 7, '#fff9', 'center', false);
 
       btn(70, 415, 340, 56, 'REJOINDRE UN SALON', false, openJoinRoom, 12, '#f0f');
       txt('ENTRE LE CODE DE TON AMI', W / 2, 488, 7, '#fff9', 'center', false);
     } else if (onlineSub === 'hosting') {
-      txt('PARTAGE CE CODE A TON AMI :', W / 2, 275, 8.5, '#fff');
+      txt('PARTAGE CE CODE A TON AMI :', W / 2, 275, 8.5, '#fff', 'center', false);
 
       g.fillStyle = '#ffffff12';
       g.fillRect(90, 292, 300, 62);
       g.strokeStyle = '#0ff';
       g.lineWidth = 2.5;
       g.strokeRect(90, 292, 300, 62);
-      txt(roomCode || '....', W / 2, 336, 26, '#ff0');
+      txt(roomCode || '....', W / 2, 336, 26, '#ff0', 'center', true);
 
       btn(110, 372, 260, 40, copiedToast > 0 ? 'CODE COPIE !' : 'COPIER LE CODE', false, copyRoomCode, 9, '#0f8');
-      txt(netStatus, W / 2, 448, 8.5, '#0ff');
+      txt(netStatus, W / 2, 448, 8.5, '#0ff', 'center', false);
       if (Math.floor(tk / 25) % 2 === 0) {
-        txt('EN ATTENTE DU JOUEUR 2...', W / 2, 478, 7.5, '#f0f');
+        txt('EN ATTENTE DU JOUEUR 2...', W / 2, 478, 7.5, '#f0f', 'center', false);
       }
     } else if (onlineSub === 'joining') {
-      txt('SAISIS LE CODE DU SALON :', W / 2, 315, 9, '#fff');
-      // Le champ HTML #roomInput est positionne juste ici (top: 46%)
+      txt('SAISIS LE CODE DU SALON :', W / 2, 315, 9, '#fff', 'center', false);
       btn(110, 425, 260, 48, 'CONNECTER', true, joinRoomSubmit, 12, '#0f8');
-      txt(netStatus, W / 2, 505, 8, '#ff0');
+      txt(netStatus, W / 2, 505, 8, '#ff0', 'center', false);
     }
 
     btn(110, 640, 260, 48, 'RETOUR MENU', false, () => {
@@ -2184,8 +2126,8 @@
 
   function drawStats() {
     overlay(0.92);
-    txt('STATISTIQUES', W / 2, 130, 22, '#0ff');
-    txt('CARRIERE ARCADE', W / 2, 162, 9, '#f0f');
+    txt('STATISTIQUES', W / 2, 130, 22, '#0ff', 'center', true);
+    txt('CARRIERE ARCADE', W / 2, 162, 9, '#f0f', 'center', false);
 
     const rows = [
       ['RECORD MODE INFINI', String(stats.best).padStart(5, '0'), '#ff0'],
@@ -2203,7 +2145,7 @@
       g.lineWidth = 1.5;
       g.strokeRect(36, y - 24, W - 72, 48);
       txt(label, 52, y + 4, 8, '#ddd', 'left', false);
-      txt(val, W - 52, y + 6, 13, col, 'right', true);
+      txt(val, W - 52, y + 6, 13, col, 'right', false);
     });
 
     txt('DEBLOQUE DES BOULES EN FAISANT DES STRIKES !', W / 2, 600, 7, '#ff0', 'center', false);
@@ -2212,17 +2154,17 @@
 
   function drawPass() {
     overlay(0.84);
-    txt('JOUEUR ' + (cp + 1), W / 2, 320, 36, cp ? '#f0f' : '#0ff');
-    txt('A TOI DE JOUER !', W / 2, 376, 12, '#ff0');
+    txt('JOUEUR ' + (cp + 1), W / 2, 320, 36, cp ? '#f0f' : '#0ff', 'center', true);
+    txt('A TOI DE JOUER !', W / 2, 376, 12, '#ff0', 'center', false);
     txt('PASSE L APPAREIL AU JOUEUR ' + (cp + 1), W / 2, 420, 8, '#fff', 'center', false);
     if (Math.floor(tk / 28) % 2 === 0) {
-      txt('TOUCHE OU ESPACE POUR LANCER', W / 2, 500, 9.5, '#0ff');
+      txt('TOUCHE OU ESPACE POUR LANCER', W / 2, 500, 9.5, '#0ff', 'center', false);
     }
   }
 
   function shareScore(scoreVal) {
     const modeName = MODES[mode].n;
-    const text = `NolBowling (${modeName}) : ${scoreVal} pts ! Peux-tu battre mon score ?`;
+    const text = `NolBowling (${modeName}) : ${scoreVal} pts ! Peux tu battre mon score ?`;
     const ta = document.createElement('textarea');
     ta.value = text;
     document.body.appendChild(ta);
@@ -2235,7 +2177,7 @@
 
   function drawOver() {
     overlay(0.91);
-    txt(FIN && fi >= NF ? 'PARTIE TERMINEE' : 'FIN DE PARTIE', W / 2, 130, 20, '#ff0');
+    txt(FIN && fi >= NF ? 'PARTIE TERMINEE' : 'FIN DE PARTIE', W / 2, 130, 20, '#ff0', 'center', true);
 
     const tt = PL.map(total);
     const top = Math.max(...tt);
@@ -2251,8 +2193,8 @@
       g.lineWidth = win ? 2.5 : 1.5;
       g.strokeRect(36, y - 26, W - 72, 112);
 
-      txt(playerLabel(i, false), W / 2, y, 10, col);
-      txt(String(tt[i]), W / 2, y + 40, 28, win || np === 1 ? '#ff0' : '#fff');
+      txt(playerLabel(i, false), W / 2, y, 10, col, 'center', false);
+      txt(String(tt[i]), W / 2, y + 40, 28, win || np === 1 ? '#ff0' : '#fff', 'center', true);
       txt(`STRIKES: ${p.strikes}  •  SPARES: ${p.spares}  •  SERIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
     });
 
@@ -2264,9 +2206,9 @@
         const winIdx = tt.indexOf(top);
         w = playerLabel(winIdx, false) + ' GAGNE !';
       }
-      txt(w, W / 2, 485, 10, '#0f8');
+      txt(w, W / 2, 485, 10, '#0f8', 'center', false);
     } else if (!FIN && total(PL[0]) >= stats.best && stats.best > 0) {
-      txt('* NOUVEAU RECORD PERSONNEL ! *', W / 2, 365, 10, '#0f8');
+      txt('* NOUVEAU RECORD PERSONNEL ! *', W / 2, 365, 10, '#0f8', 'center', false);
     }
 
     btn(90, 525, 300, 50, 'REJOUER', Math.floor(tk / 28) % 2 === 0, () => startGame(false), 14, '#ff0');
@@ -2289,32 +2231,38 @@
     drawLane();
     if (st === 'aim') drawAim();
 
-    // Tri en profondeur (painter's algorithm) des quilles, bumpers et boule
     const items = [];
-    pins.forEach(p => { if (!p.gone) items.push([p.y, () => drawPin(p)]); });
-    bumpers.forEach(b => items.push([b.y, () => drawBumper(b)]));
+    for (let i = 0; i < pins.length; i++) {
+      const p = pins[i];
+      if (!p.gone) items.push([p.y, () => drawPin(p)]);
+    }
+    for (let i = 0; i < bumpers.length; i++) {
+      const b = bumpers[i];
+      items.push([b.y, () => drawBumper(b)]);
+    }
     if (ball) items.push([ball.y, drawBall]);
-    items.sort((a, b) => a[0] - b[0]).forEach(i => i[1]());
+    items.sort((a, b) => a[0] - b[0]);
+    for (let i = 0; i < items.length; i++) items[i][1]();
 
     drawSweeper();
 
-    // Particules & textes flottants
-    parts.forEach(p => {
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
       const [x, y, s] = P(p.x, p.y);
-      g.globalAlpha = clamp(p.l / 28, 0, 1);
+      g.globalAlpha = clamp(p.l / 22, 0, 1);
       g.fillStyle = p.c;
       g.fillRect(x, y - 8 * s, p.s * s * 1.5, p.s * s * 1.5);
-    });
+    }
     g.globalAlpha = 1;
 
-    texts.forEach(t => {
+    for (let i = 0; i < texts.length; i++) {
+      const t = texts[i];
       const [x, y] = P(t.x, t.y);
-      g.globalAlpha = clamp(t.l / 28, 0, 1);
-      txt(t.t, x, y - 30, 13, t.c, 'center', true, true);
-    });
+      g.globalAlpha = clamp(t.l / 22, 0, 1);
+      txt(t.t, x, y - 30, 13, t.c, 'center', false, true);
+    }
     g.globalAlpha = 1;
 
-    // Flash lumineux lors des strikes / spares
     if (flash > 0) {
       g.fillStyle = flashCol;
       g.globalAlpha = flash * 0.35;
@@ -2329,7 +2277,6 @@
       drawPinRadar();
     }
 
-    // Annonces arcade centrales
     if (msgT > 0 && st !== 'over') {
       const sc = 1 + Math.sin(msgT / 4) * 0.04 + (msgT > 85 ? (msgT - 85) * 0.025 : 0);
       g.save();
@@ -2337,9 +2284,9 @@
       g.scale(sc, sc);
       g.globalAlpha = clamp(msgT / 18, 0, 1);
       const sz = msg.length > 10 ? (msg.length > 15 ? 15 : 20) : 28;
-      txt(msg, 0, 0, sz, msgC, 'center', true, true);
+      txt(msg, 0, 0, sz, msgC, 'center', false, true);
       if (msgSub) {
-        txt(msgSub, 0, 26, 8.5, '#fff', 'center', true, true);
+        txt(msgSub, 0, 26, 8.5, '#fff', 'center', false, true);
       }
       g.restore();
     }
@@ -2352,7 +2299,7 @@
   }
 
   /* ==========================================================================
-     6. CONTRÔLES SOURIS, TACTILE & CLAVIER
+     7. CONTROLES & BOUCLE PRINCIPALE
      ========================================================================== */
   function cpos(e) {
     const r = cv.getBoundingClientRect();
@@ -2385,7 +2332,8 @@
     moved = false;
     hitBtn = false;
 
-    for (const h of hits) {
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i];
       if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) {
         hitBtn = true;
         h.fn();
@@ -2461,9 +2409,6 @@
     steerOn = false;
   });
 
-  /* ==========================================================================
-     7. BOUCLE PRINCIPALE
-     ========================================================================== */
   rack();
   newBall();
   ball.x = -100;
@@ -2472,12 +2417,15 @@
   let acc = 0;
 
   function loop(now) {
-    acc += Math.min(now - last, 100);
+    acc += Math.min(now - last, 50);
     last = now;
-    while (acc >= 16.667) {
+    let steps = 0;
+    while (acc >= 16.667 && steps < 3) {
       update();
       acc -= 16.667;
+      steps++;
     }
+    if (steps === 3) acc = 0;
     draw();
     requestAnimationFrame(loop);
   }
