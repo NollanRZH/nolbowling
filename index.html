@@ -142,11 +142,13 @@
     { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES • 10 FRAMES' }
   ];
 
+  // Liste des boules disponibles (incluant la nouvelle boule signature Ylazia)
   const SKINS = [
-    { id: 'cyan', name: 'CYBER CYAN', c1: '#ffffff', c2: '#00ffff', c3: '#6600ff', glow: '#00ffff', trail: '#00ffff', req: 0 },
-    { id: 'magenta', name: 'PLASMA PINK', c1: '#ffffff', c2: '#ff22ee', c3: '#660044', glow: '#ff00ff', trail: '#ff44ff', req: 0 },
-    { id: 'gold', name: 'SOLAR GOLD', c1: '#ffffdd', c2: '#ffcc00', c3: '#cc4400', glow: '#ffaa00', trail: '#ffdd00', req: 3 },
-    { id: 'matrix', name: 'VOID MATRIX', c1: '#ccffcc', c2: '#00ff66', c3: '#003311', glow: '#00ff88', trail: '#00ff66', req: 10 }
+    { id: 'cyan', name: 'CYBER CYAN', label: 'CYAN', c1: '#ffffff', c2: '#00ffff', c3: '#6600ff', glow: '#00ffff', trail: '#00ffff', req: 0 },
+    { id: 'magenta', name: 'PLASMA PINK', label: 'PINK', c1: '#ffffff', c2: '#ff22ee', c3: '#660044', glow: '#ff00ff', trail: '#ff44ff', req: 0 },
+    { id: 'gold', name: 'SOLAR GOLD', label: 'GOLD', c1: '#ffffdd', c2: '#ffcc00', c3: '#cc4400', glow: '#ffaa00', trail: '#ffdd00', req: 3 },
+    { id: 'matrix', name: 'VOID MATRIX', label: 'MATRIX', c1: '#ccffcc', c2: '#00ff66', c3: '#003311', glow: '#00ff88', trail: '#00ff66', req: 10 },
+    { id: 'ylazia', name: 'YLAZIA', label: 'YLAZIA', c1: '#ff66dd', c2: '#7a0bc0', c3: '#090114', glow: '#ff22bb', trail: '#e0119d', req: 0 }
   ];
 
   const BOT_LEVELS = [
@@ -213,7 +215,7 @@
 
   let myNick = sanitizeNick(stats.nick, 'JOUEUR');
   let onlineCount = 1;
-  const publicRooms = new Map(); // code -> { code, host, count, max, mode, ts }
+  const publicRooms = new Map();
   const mySessionId = 'nb_' + Math.random().toString(36).slice(2, 11);
   let lastPublishedRoomCode = '';
 
@@ -270,10 +272,10 @@
   const hostConns = [];
   let guestConn = null;
   let mySlot = 0;
-  let netRole = null; // 'host' | 'guest'
+  let netRole = null;
   let netStatus = 'PRET A CONNECTER';
   let roomCode = '';
-  let onlineSub = 'lobby'; // 'lobby' | 'hosting' | 'joining'
+  let onlineSub = 'lobby';
   let lobbyScroll = 0;
   let netSyncTimer = 0;
   let roomRoster = [];
@@ -2038,6 +2040,193 @@
     g.stroke();
   }
 
+  // Rendu haute precision de la boule signature "Ylazia" (volutes violet/magenta + eclair rose borde d'argent + 3 trous + vernis brillant)
+  function drawYlaziaSurface(cx, cy, r, rotAngle, locked = false) {
+    g.save();
+    g.translate(cx, cy);
+
+    // 1. Sphère de base violet très profond / noir brillant
+    const baseGr = g.createRadialGradient(-r * 0.32, -r * 0.38, r * 0.08, 0, 0, r);
+    if (locked) {
+      baseGr.addColorStop(0, '#555555');
+      baseGr.addColorStop(0.55, '#2b2b2b');
+      baseGr.addColorStop(1, '#111111');
+    } else {
+      baseGr.addColorStop(0, '#4f0c82');
+      baseGr.addColorStop(0.45, '#1d0338');
+      baseGr.addColorStop(0.85, '#090114');
+      baseGr.addColorStop(1, '#19032e');
+    }
+    g.fillStyle = baseGr;
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.fill();
+
+    // Clip sphérique pour les motifs marbrés et l'éclair
+    g.save();
+    g.beginPath();
+    g.arc(0, 0, r * 0.99, 0, Math.PI * 2);
+    g.clip();
+
+    g.save();
+    g.rotate(rotAngle);
+
+    if (!locked) {
+      // 2. Volutes marbrées magenta / violet électrique (fidèles à l'image de référence)
+      const swirl1 = g.createRadialGradient(-r * 0.45, r * 0.35, r * 0.04, -r * 0.25, r * 0.25, r * 0.85);
+      swirl1.addColorStop(0, 'rgba(255, 20, 175, 0.88)');
+      swirl1.addColorStop(0.45, 'rgba(155, 15, 220, 0.52)');
+      swirl1.addColorStop(1, 'rgba(15, 2, 30, 0)');
+      g.fillStyle = swirl1;
+      g.beginPath();
+      g.arc(-r * 0.25, r * 0.25, r * 0.85, 0, Math.PI * 2);
+      g.fill();
+
+      const swirl2 = g.createRadialGradient(r * 0.42, -r * 0.38, r * 0.04, r * 0.35, -r * 0.25, r * 0.78);
+      swirl2.addColorStop(0, 'rgba(235, 30, 210, 0.82)');
+      swirl2.addColorStop(0.5, 'rgba(110, 10, 185, 0.45)');
+      swirl2.addColorStop(1, 'rgba(10, 1, 22, 0)');
+      g.fillStyle = swirl2;
+      g.beginPath();
+      g.arc(r * 0.35, -r * 0.25, r * 0.78, 0, Math.PI * 2);
+      g.fill();
+
+      // Rubans fluides marbrés qui traversent la surface
+      g.lineCap = 'round';
+      g.strokeStyle = 'rgba(255, 45, 195, 0.48)';
+      g.lineWidth = r * 0.22;
+      g.beginPath();
+      g.moveTo(-r * 0.9, r * 0.15);
+      g.bezierCurveTo(-r * 0.35, r * 0.75, r * 0.15, r * 0.15, r * 0.78, r * 0.55);
+      g.stroke();
+
+      g.strokeStyle = 'rgba(148, 22, 235, 0.55)';
+      g.lineWidth = r * 0.16;
+      g.beginPath();
+      g.moveTo(-r * 0.65, -r * 0.65);
+      g.bezierCurveTo(-r * 0.05, -r * 0.25, r * 0.35, -r * 0.8, r * 0.88, -r * 0.15);
+      g.stroke();
+
+      g.strokeStyle = 'rgba(255, 110, 220, 0.35)';
+      g.lineWidth = r * 0.08;
+      g.beginPath();
+      g.moveTo(-r * 0.75, r * 0.45);
+      g.bezierCurveTo(-r * 0.2, r * 0.85, r * 0.25, r * 0.3, r * 0.72, r * 0.68);
+      g.stroke();
+    }
+
+    // 3. Éclair rose vif diagonal bordé d'argent métallisé (motif signature Ylazia)
+    g.save();
+    g.beginPath();
+    g.moveTo(-r * 0.64, -r * 0.66);
+    g.lineTo(r * 0.10, -r * 0.24);
+    g.lineTo(r * 0.06, -r * 0.48);
+    g.lineTo(r * 0.52, -r * 0.08);
+    g.lineTo(r * 0.46, -r * 0.28);
+    g.lineTo(r * 0.86, r * 0.24);
+    g.lineTo(r * 0.30, -r * 0.04);
+    g.lineTo(r * 0.34, r * 0.16);
+    g.lineTo(-r * 0.10, -r * 0.18);
+    g.lineTo(-r * 0.05, r * 0.02);
+    g.closePath();
+
+    const boltGr = g.createLinearGradient(-r * 0.5, -r * 0.6, r * 0.8, r * 0.2);
+    if (locked) {
+      boltGr.addColorStop(0, '#888888');
+      boltGr.addColorStop(1, '#444444');
+    } else {
+      boltGr.addColorStop(0, '#ff4dc4');
+      boltGr.addColorStop(0.5, '#e60099');
+      boltGr.addColorStop(1, '#ff1aa3');
+    }
+    g.fillStyle = boltGr;
+    g.fill();
+
+    // Bordure argentée / blanche brillante de l'éclair
+    g.lineJoin = 'miter';
+    g.miterLimit = 4;
+    g.lineWidth = Math.max(1.1, r * 0.075);
+    g.strokeStyle = locked ? '#999999' : '#f4e6ff';
+    g.stroke();
+    g.restore();
+
+    // 4. Trois trous de bowling réalistes (2 doigts + 1 pouce en dessous avec biseau violet)
+    const holes = [
+      { x: -r * 0.52, y: -r * 0.12, hr: r * 0.135 },
+      { x: -r * 0.20, y: -r * 0.07, hr: r * 0.135 },
+      { x: -r * 0.33, y: r * 0.36, hr: r * 0.165 }
+    ];
+    for (let i = 0; i < holes.length; i++) {
+      const h = holes[i];
+      // Liseré de biseau lumineux autour du trou
+      g.fillStyle = locked ? 'rgba(180,180,180,0.45)' : 'rgba(225, 130, 255, 0.72)';
+      g.beginPath();
+      g.arc(h.x + r * 0.015, h.y + r * 0.015, h.hr * 1.16, 0, Math.PI * 2);
+      g.fill();
+
+      // Cavité sombre profonde
+      const hGr = g.createRadialGradient(h.x + h.hr * 0.25, h.y + h.hr * 0.25, h.hr * 0.1, h.x, h.y, h.hr);
+      hGr.addColorStop(0, '#180428');
+      hGr.addColorStop(1, '#020005');
+      g.fillStyle = hGr;
+      g.beginPath();
+      g.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
+      g.fill();
+    }
+
+    g.restore(); // Fin rotation de la sphère
+
+    // 5. Reflets spéculaires fixes (vernis poli haut de gamme)
+    // Reflet principal carré/arrondi en haut à gauche comme sur l'image de référence
+    g.save();
+    g.translate(-r * 0.30, -r * 0.54);
+    g.rotate(-0.38);
+    const spec1 = g.createLinearGradient(0, -r * 0.12, 0, r * 0.12);
+    spec1.addColorStop(0, 'rgba(255, 255, 255, 0.92)');
+    spec1.addColorStop(1, 'rgba(255, 220, 255, 0.22)');
+    g.fillStyle = spec1;
+    g.fillRect(-r * 0.16, -r * 0.10, r * 0.32, r * 0.20);
+    g.restore();
+
+    // Reflet latéral gauche
+    g.save();
+    g.translate(-r * 0.64, -r * 0.12);
+    g.rotate(-0.2);
+    g.fillStyle = 'rgba(255, 240, 255, 0.72)';
+    g.beginPath();
+    g.ellipse(0, 0, r * 0.07, r * 0.18, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+
+    // Reflet fin sur le bord supérieur droit
+    g.strokeStyle = 'rgba(255, 190, 255, 0.68)';
+    g.lineWidth = Math.max(1, r * 0.06);
+    g.lineCap = 'round';
+    g.beginPath();
+    g.arc(0, 0, r * 0.87, -0.85, -0.25);
+    g.stroke();
+
+    // Rim-light magenta inférieur (reflet de la piste)
+    const rimGr = g.createRadialGradient(0, r * 0.75, r * 0.05, 0, r * 0.6, r * 0.7);
+    rimGr.addColorStop(0, locked ? 'rgba(150,150,150,0.25)' : 'rgba(255, 30, 190, 0.45)');
+    rimGr.addColorStop(1, 'rgba(255, 30, 190, 0)');
+    g.fillStyle = rimGr;
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.fill();
+
+    g.restore(); // Fin clip sphérique
+
+    // Fin contour poli
+    g.strokeStyle = locked ? 'rgba(130,130,130,0.4)' : 'rgba(255, 110, 230, 0.45)';
+    g.lineWidth = Math.max(0.8, r * 0.04);
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.stroke();
+
+    g.restore();
+  }
+
   function drawBall() {
     if (!ball || !isFinite(ball.x) || !isFinite(ball.y) || ball.x < 0) return;
     const sk = SKINS[stats.skin] || SKINS[0];
@@ -2057,10 +2246,16 @@
     const [x, y, s] = P(ball.x, ball.y);
     const r = BR * s;
 
-    g.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    // Ombre portée au sol (avec halo violet/magenta subtil pour Ylazia)
+    g.fillStyle = sk.id === 'ylazia' ? 'rgba(95, 8, 120, 0.55)' : 'rgba(0, 0, 0, 0.55)';
     g.beginPath();
-    g.ellipse(x, y + r * 0.7, r * 1.15, r * 0.45, 0, 0, 7);
+    g.ellipse(x, y + r * 0.7, r * 1.18, r * 0.46, 0, 0, 7);
     g.fill();
+
+    if (sk.id === 'ylazia') {
+      drawYlaziaSurface(x, y - r * 0.3, r, ball.rot * 0.45 + ball.spin * 0.5, false);
+      return;
+    }
 
     const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.8, 2, x, y - r * 0.3, r * 1.2);
     gr.addColorStop(0, sk.c1);
@@ -2434,12 +2629,19 @@
       txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 428, 6.8, '#fffb', 'center', false);
     }
 
+    // Sélecteur de boules Arcade (incluant Ylazia)
     txt('BOULE ARCADE', W / 2, 476, 8, '#0f8', 'center', false);
+    const skinCount = SKINS.length;
+    const skinGap = 8;
+    const totalW = W - 44;
+    const boxW = Math.floor((totalW - skinGap * (skinCount - 1)) / skinCount);
+    const startX = Math.floor((W - (boxW * skinCount + skinGap * (skinCount - 1))) / 2);
+
     SKINS.forEach((sk, i) => {
       const unlocked = stats.strikes >= sk.req;
-      const bx = 22 + i * 111;
+      const bx = startX + i * (boxW + skinGap);
       const sel = stats.skin === i;
-      btn(bx, 488, 103, 50, '', sel, () => {
+      btn(bx, 488, boxW, 52, '', sel, () => {
         if (unlocked) {
           stats.skin = i;
           saveStats();
@@ -2448,19 +2650,24 @@
           tone(160, 0.15, 'sawtooth');
           say('BLOQUE', '#f35', 55, sk.req + ' STRIKES REQUIS');
         }
-      }, 7, sk.glow, !unlocked);
+      }, 6.5, sk.glow, !unlocked);
 
-      const cx = bx + 51.5, cy = 507, r = 10.5;
-      const gr = g.createRadialGradient(cx - 3, cy - 3, 1, cx, cy, r);
-      gr.addColorStop(0, unlocked ? sk.c1 : '#666');
-      gr.addColorStop(0.4, unlocked ? sk.c2 : '#444');
-      gr.addColorStop(1, unlocked ? sk.c3 : '#222');
-      g.fillStyle = gr;
-      g.beginPath();
-      g.arc(cx, cy, r, 0, 7);
-      g.fill();
+      const cx = bx + boxW / 2, cy = 507, r = 11.5;
+      if (sk.id === 'ylazia') {
+        drawYlaziaSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, !unlocked);
+      } else {
+        const gr = g.createRadialGradient(cx - 3, cy - 3, 1, cx, cy, r);
+        gr.addColorStop(0, unlocked ? sk.c1 : '#666');
+        gr.addColorStop(0.4, unlocked ? sk.c2 : '#444');
+        gr.addColorStop(1, unlocked ? sk.c3 : '#222');
+        g.fillStyle = gr;
+        g.beginPath();
+        g.arc(cx, cy, r, 0, 7);
+        g.fill();
+      }
 
-      txt(unlocked ? sk.name.split(' ')[1] : sk.req + 'X', cx, 531, 6.5, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
+      const labelTxt = unlocked ? (sk.label || sk.name.split(' ')[1]) : sk.req + 'X';
+      txt(labelTxt, cx, 533, 6.2, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
     });
 
     const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
