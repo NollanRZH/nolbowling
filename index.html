@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>NolBowling — Synthwave Arcade</title>
+<title>NolBowling Synthwave Arcade</title>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
@@ -82,9 +82,9 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
   const MODES = [
-    { n: 'INFINI', f: 0, d: 'SANS FIN - OBSTACLES - RECORD' },
+    { n: 'INFINI', f: 0, d: 'SANS FIN • OBSTACLES • RECORD' },
     { n: '5 FRAMES', f: 5, d: 'PARTIE RAPIDE EN 5 FRAMES' },
-    { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES - 10 FRAMES' }
+    { n: '10 FRAMES', f: 10, d: 'REGLES OFFICIELLES • 10 FRAMES' }
   ];
 
   const SKINS = [
@@ -130,12 +130,21 @@
   let tk = 0;
   let mode = 0, np = 1, mrow = 0;
   let playType = 'solo'; // 'solo' | 'bot' | 'local' | 'online'
-  let botDiff = 1; // 0: ROOKIE, 1: PRO, 2: CYBER-PRO
+  let botDiff = 1; // 0: ROOKIE, 1: PRO, 2: CYBER PRO
   const BOT_LEVELS = [
-    { n: 'ROOKIE', desc: 'IA DEBUTANTE - FAIT DES ERREURS', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.2 },
-    { n: 'PRO', desc: 'IA EQUILIBREE - VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
-    { n: 'CYBER-PRO', desc: 'IA EXPERTE - POCHE 1-3 & EFFET', errPos: 4, errAng: 0.02, errPow: 0.03, spinSkill: 0.95 }
+    { n: 'ROOKIE', desc: 'IA DEBUTANTE • FAIT DES ERREURS', errPos: 34, errAng: 0.16, errPow: 0.24, spinSkill: 0.2 },
+    { n: 'PRO', desc: 'IA EQUILIBREE • VISE LES SPARES', errPos: 14, errAng: 0.065, errPow: 0.09, spinSkill: 0.65 },
+    { n: 'CYBER PRO', desc: 'IA EXPERTE • POCHE 1 3 & EFFET', errPos: 4, errAng: 0.02, errPow: 0.03, spinSkill: 0.95 }
   ];
+  let myNick = (stats.nick || 'JOUEUR').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8) || 'JOUEUR';
+  let oppNick = 'AMI';
+  let onlineCount = 1;
+  let presencePeer = null;
+  let presenceConns = new Map();
+  let knownPeers = new Set();
+  const mySessionId = 'nbu-' + Math.random().toString(36).slice(2, 10);
+  const nickInputEl = document.getElementById('nickInput');
+  const roomInputEl = document.getElementById('roomInput');
 
   let NF = 0, FIN = false;
   let PL = [], cp = 0, fi = 0, fr = [], sb = 10, turnChg = false, level = 1;
@@ -152,113 +161,142 @@
   let copiedToast = 0;
   let botPlan = null;
 
-  // Etat Multijoueur P2P (PeerJS / WebRTC) & Presence en temps reel
   let peer = null, conn = null;
-  let netRole = null; // 'host' (J1) | 'guest' (J2)
+  let netRole = null;
   let netStatus = 'PRET A CONNECTER';
   let roomCode = '';
-  let onlineSub = 'choice'; // 'choice' | 'hosting' | 'joining'
+  let onlineSub = 'choice';
   let netSyncTimer = 0;
   let remoteEndPending = null;
-  let myNick = (stats.nick || 'JOUEUR').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8) || 'JOUEUR';
-  let oppNick = 'AMI';
-  let onlineCount = 1;
-  let presencePeer = null;
-  let presenceConns = [];
-  const nickInputEl = document.getElementById('nickInput');
-  const roomInputEl = document.getElementById('roomInput');
 
   nickInputEl.value = myNick;
   nickInputEl.addEventListener('input', () => {
-    const clean = nickInputEl.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8);
+    const clean = nickInputEl.value.toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8);
     nickInputEl.value = clean;
     myNick = clean || 'JOUEUR';
     stats.nick = myNick;
     saveStats();
   });
 
-  // Compteur de joueurs connectes en temps reel sur le site via PeerJS (sans serveur)
+  // Compteur de joueurs connectes en temps reel sur le site via PeerJS (PC + Mobile)
   function initSitePresence() {
-    if (typeof Peer === 'undefined') return;
-    const SLOTS = 12;
+    if (typeof Peer === 'undefined' || presencePeer) return;
+    const SLOTS = 8;
+    knownPeers.add(mySessionId);
 
-    function tryClaimSlot(idx) {
-      if (idx >= SLOTS) {
+    function updateCount() {
+      onlineCount = Math.max(1, knownPeers.size);
+    }
+
+    function sendPresence(c) {
+      if (c && c.open) {
         try {
-          presencePeer = new Peer();
-          presencePeer.on('open', () => connectToHubs(-1));
-          presencePeer.on('error', () => {});
+          c.send({ type: 'presence', from: mySessionId, list: Array.from(knownPeers) });
         } catch (e) {}
-        return;
-      }
-      try {
-        const p = new Peer('nolbowl-live-' + idx);
-        p.on('open', () => {
-          presencePeer = p;
-          presencePeer.on('connection', c => {
-            if (!presenceConns.includes(c)) presenceConns.push(c);
-            c.on('open', broadcastPresence);
-            c.on('close', () => {
-              presenceConns = presenceConns.filter(x => x !== c);
-              broadcastPresence();
-            });
-            c.on('data', d => {
-              if (d && d.type === 'count' && typeof d.n === 'number') {
-                onlineCount = Math.max(onlineCount, d.n);
-              }
-            });
-            broadcastPresence();
-          });
-          connectToHubs(idx);
-        });
-        p.on('error', err => {
-          try { p.destroy(); } catch (e) {}
-          if (err && err.type === 'unavailable-id') {
-            tryClaimSlot(idx + 1);
-          }
-        });
-      } catch (e) {
-        // Environnement restreint (ex: preview sandbox sans WebSocket)
       }
     }
 
     function broadcastPresence() {
-      const active = presenceConns.filter(c => c.open);
-      onlineCount = Math.max(1, active.length + 1);
-      active.forEach(c => {
-        try { c.send({ type: 'count', n: onlineCount }); } catch (e) {}
+      updateCount();
+      presenceConns.forEach(c => sendPresence(c));
+    }
+
+    function bindPresenceConn(c) {
+      const pid = c.peer;
+      presenceConns.set(pid, c);
+      c.on('open', () => {
+        sendPresence(c);
+        broadcastPresence();
+      });
+      c.on('data', d => {
+        if (!d || typeof d !== 'object') return;
+        if (d.type === 'presence' && Array.isArray(d.list)) {
+          let changed = false;
+          d.list.forEach(id => {
+            if (!knownPeers.has(id)) {
+              knownPeers.add(id);
+              changed = true;
+            }
+          });
+          updateCount();
+          if (changed) broadcastPresence();
+        } else if (d.type === 'bye' && d.from) {
+          knownPeers.delete(d.from);
+          updateCount();
+          broadcastPresence();
+        }
+      });
+      c.on('close', () => {
+        presenceConns.delete(pid);
+        if (c._remoteSessionId) knownPeers.delete(c._remoteSessionId);
+        broadcastPresence();
+      });
+      c.on('error', () => {
+        presenceConns.delete(pid);
       });
     }
 
     function connectToHubs(skipIdx) {
       for (let i = 0; i < SLOTS; i++) {
         if (i === skipIdx) continue;
+        const targetId = 'nolbowl-hub-' + i;
+        if (presenceConns.has(targetId)) continue;
         try {
-          const c = presencePeer.connect('nolbowl-live-' + i, { reliable: false });
-          c.on('open', () => {
-            if (!presenceConns.includes(c)) presenceConns.push(c);
-            broadcastPresence();
-          });
-          c.on('data', d => {
-            if (d && d.type === 'count' && typeof d.n === 'number') {
-              onlineCount = Math.max(1, d.n);
-            }
-          });
-          c.on('close', () => {
-            presenceConns = presenceConns.filter(x => x !== c);
-            broadcastPresence();
-          });
-          c.on('error', () => {});
+          const c = presencePeer.connect(targetId, { reliable: true });
+          bindPresenceConn(c);
         } catch (e) {}
       }
     }
 
-    tryClaimSlot(0);
+    function tryClaimHub(idx) {
+      if (idx >= SLOTS) {
+        try {
+          const p = new Peer(mySessionId);
+          p.on('open', () => {
+            presencePeer = p;
+            presencePeer.on('connection', bindPresenceConn);
+            connectToHubs(-1);
+          });
+          p.on('error', () => {});
+        } catch (e) {}
+        return;
+      }
+      try {
+        const p = new Peer('nolbowl-hub-' + idx);
+        p.on('open', () => {
+          presencePeer = p;
+          presencePeer.on('connection', bindPresenceConn);
+          connectToHubs(idx);
+        });
+        p.on('error', err => {
+          try { p.destroy(); } catch (e) {}
+          if (err && err.type === 'unavailable-id') {
+            tryClaimHub(idx + 1);
+          }
+        });
+      } catch (e) {}
+    }
+
+    tryClaimHub(0);
+
+    // Rafraichissement periodique pour detecter les nouveaux arrivants PC/Mobile
+    setInterval(() => {
+      if (presencePeer && !presencePeer.destroyed) {
+        connectToHubs(-1);
+        broadcastPresence();
+      }
+    }, 6000);
+
     window.addEventListener('beforeunload', () => {
-      presenceConns.forEach(c => { try { c.close(); } catch (e) {} });
+      presenceConns.forEach(c => {
+        try { c.send({ type: 'bye', from: mySessionId }); c.close(); } catch (e) {}
+      });
       if (presencePeer) { try { presencePeer.destroy(); } catch (e) {} }
     });
   }
+
+  // Demarre le compteur de presence des l'ouverture du site
+  setTimeout(initSitePresence, 300);
 
   // Animation de la balayeuse mecanique (Pinsetter)
   let sweeper = { active: false, t: 0, dur: 54, resetRack: false, cleared: false };
@@ -463,7 +501,7 @@
   function setupConn(connection) {
     conn = connection;
     conn.on('open', () => {
-      netStatus = 'CONNECTE !';
+      netStatus = 'CONNECTE ! LANCEMENT...';
       arp([523.25, 659.25, 783.99], 60);
       netSend({ type: 'hello', nick: myNick });
       if (netRole === 'host') {
@@ -484,8 +522,78 @@
     });
   }
 
+  function handleNetData(d) {
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'hello') {
+      if (d.nick) oppNick = sanitizeNick(d.nick, 'AMI');
+      if (netRole === 'host' && st === 'online') {
+        netSend({ type: 'start', mode, nick: myNick, seed: Date.now() });
+        startGame(true);
+      }
+    } else if (d.type === 'start') {
+      if (d.nick) oppNick = sanitizeNick(d.nick, 'AMI');
+      mode = typeof d.mode === 'number' ? d.mode : mode;
+      roomInputEl.style.display = 'none';
+      nickInputEl.style.display = 'none';
+      netSend({ type: 'hello', nick: myNick });
+      startGame(true);
+    } else if (d.type === 'aim') {
+      if (!isMyNetTurn() && st === 'aim') {
+        px = d.px;
+        if (ball) ball.x = px;
+        aimLock = d.aimLock;
+        aimA = d.aimA;
+        power = d.power;
+      }
+    } else if (d.type === 'launch') {
+      if (!isMyNetTurn() && st === 'aim') {
+        px = d.px;
+        ball.x = d.px;
+        ball.y = 735;
+        ball.vx = d.vx;
+        ball.vy = d.vy;
+        ball.spin = d.spin || 0;
+        ball.rolling = true;
+        aimA = d.aimA;
+        power = d.power;
+        st = 'roll';
+        settleT = 0;
+        sb = pins.filter(p => !p.gone).length;
+        tone(180, 0.35, 'sawtooth', 0.08, -100);
+        if (d.perfect) {
+          say('PUISSANCE PARFAITE', '#0f8', 55, !FIN ? '+25 PTS BONUS' : 'TRAJECTOIRE OPTIMALE');
+          if (!FIN) PL[cp].bonus += 25;
+        }
+      }
+    } else if (d.type === 'roll_sync') {
+      if (!isMyNetTurn() && st === 'roll' && ball && ball.rolling) {
+        ball.x = d.bx;
+        ball.y = d.by;
+        ball.vx = d.vx;
+        ball.vy = d.vy;
+        ball.spin = d.spin;
+      }
+    } else if (d.type === 'throw_res') {
+      if (!isMyNetTurn()) {
+        if (st === 'roll') {
+          remoteEndPending = d;
+          endThrow(d);
+        } else if (st === 'between') {
+          pins.forEach((p, idx) => {
+            if (d.pins[idx]) {
+              p.down = d.pins[idx].down;
+              p.gone = d.pins[idx].gone;
+            }
+          });
+        }
+      }
+    } else if (d.type === 'rematch') {
+      startGame(true);
+    }
+  }
+
   function sanitizeNick(raw, fallback) {
-    const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8);
+    const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 8);
     return clean || fallback;
   }
 
@@ -544,7 +652,7 @@
     }
     roomInputEl.style.display = 'none';
     roomCode = code;
-    netStatus = 'CONNEXION A NOL-' + code + '...';
+    netStatus = 'CONNEXION A NOL ' + code + '...';
     try {
       peer = new Peer();
       peer.on('open', () => {
@@ -931,13 +1039,13 @@
         if (pl.streak > stats.maxStreak) stats.maxStreak = pl.streak;
       }
 
-      const streakNames = ['', 'STRIKE !!!', 'DOUBLE STRIKE !!', 'TURKEY !!!', 'FOUR-BAGGER !!', 'MEGA STREAK !!'];
+      const streakNames = ['', 'STRIKE !!!', 'DOUBLE STRIKE !!', 'TURKEY !!!', 'FOUR BAGGER !!', 'MEGA STREAK !!'];
       const title = streakNames[Math.min(pl.streak, streakNames.length - 1)];
       let sub = '';
       if (!FIN && pl.streak > 1) {
         const comboBonus = (pl.streak - 1) * 50;
         pl.bonus += comboBonus;
-        sub = 'SÉRIE x' + pl.streak + ' (+' + comboBonus + ' PTS)';
+        sub = 'SERIE x' + pl.streak + ' (+' + comboBonus + ' PTS)';
       } else if (ball.bumperHits > 0 && !FIN) {
         const bBonus = ball.bumperHits * 30;
         pl.bonus += bBonus;
@@ -974,7 +1082,7 @@
         tone(140, 0.38, 'sawtooth', 0.08, -85);
       } else if (!done && checkSplit(standing)) {
         const is710 = standing.length === 2 && standing.some(p => p.id === 7) && standing.some(p => p.id === 10);
-        say(is710 ? 'SPLIT 7-10 !' : 'SPLIT !', '#ff6600', 85, n + ' QUILLE' + (n > 1 ? 'S' : '') + ' • BONNE CHANCE');
+        say(is710 ? 'SPLIT 7 10 !' : 'SPLIT !', '#ff6600', 85, n + ' QUILLE' + (n > 1 ? 'S' : '') + ' • BONNE CHANCE');
         arp([330, 293.66, 261.63], 70, 'triangle', 0.06);
       } else {
         say(n + (n > 1 ? ' QUILLES' : ' QUILLE'), '#fff', 55, left > 0 && !done ? left + ' RESTANTE' + (left > 1 ? 'S' : '') : '');
@@ -2011,8 +2119,8 @@
 
     // Mini guide rapide
     [
-      '1. PLACE LA BOULE - 2. BLOQUE L ANGLE',
-      '3. VISE LE VERT - 4. EFFET EN VOL < >'
+      '1. PLACE LA BOULE • 2. BLOQUE L ANGLE',
+      '3. VISE LE VERT • 4. EFFET EN VOL < >'
     ].forEach((s, i) => txt(s, W / 2, 690 + i * 20, 7, '#fff9', 'center', false));
 
     txt('RECORD INFINI : ' + String(stats.best).padStart(5, '0'), W / 2, 768, 8.5, '#ff0', 'center', true);
@@ -2145,7 +2253,7 @@
 
       txt(playerLabel(i, false), W / 2, y, 10, col);
       txt(String(tt[i]), W / 2, y + 40, 28, win || np === 1 ? '#ff0' : '#fff');
-      txt(`STRIKES: ${p.strikes}  -  SPARES: ${p.spares}  -  SERIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
+      txt(`STRIKES: ${p.strikes}  •  SPARES: ${p.spares}  •  SERIE: ${p.bestStreak}`, W / 2, y + 70, 7, '#ccc', 'center', false);
     });
 
     if (np > 1) {
