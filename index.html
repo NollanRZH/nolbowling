@@ -301,7 +301,7 @@
     const now = Date.now();
     const list = [];
     publicRooms.forEach((r, code) => {
-      if (now - r.ts > 16000) {
+      if (now - r.ts > 20000) {
         publicRooms.delete(code);
       } else if (r.count < r.max) {
         list.push(r);
@@ -348,7 +348,8 @@
             host: myNick,
             count: roomRoster.length,
             max: onlineCapacity,
-            mode
+            mode,
+            ts: Date.now()
           });
         }
         broadcastPresence();
@@ -467,10 +468,11 @@
           host: myNick,
           count: roomRoster.length,
           max: onlineCapacity,
-          mode
+          mode,
+          ts: Date.now()
         });
       }
-    }, 4500);
+    }, 3500);
 
     window.addEventListener('beforeunload', () => {
       if (netRole === 'host' && roomCode) broadcastRoomClose(roomCode);
@@ -727,7 +729,8 @@
         host: myNick,
         count: roomRoster.length,
         max: onlineCapacity,
-        mode
+        mode,
+        ts: Date.now()
       });
     }
   }
@@ -925,7 +928,8 @@
           host: myNick,
           count: 1,
           max: onlineCapacity,
-          mode
+          mode,
+          ts: Date.now()
         });
       });
       peer.on('connection', c => {
@@ -2522,6 +2526,16 @@
 
       const rooms = getActivePublicRooms();
       txt(`SALONS DISPONIBLES (${rooms.length})`, W / 2, 364, 8, '#0f8', 'center', false);
+      
+      // Bouton Actualiser les salons
+      btn(W - 134, 348, 102, 26, 'ACTUALISER', false, () => {
+        presenceConns.forEach(c => {
+          if (c && c.open) {
+            try { c.send({ type: 'presence', from: mySessionId, list: Array.from(knownPeers), rooms: getActivePublicRooms() }); } catch(e){}
+          }
+        });
+        tone(520, 0.05);
+      }, 6.5, '#0ff');
 
       if (rooms.length === 0) {
         txt('AUCUN SALON PUBLIC POUR L INSTANT', W / 2, 445, 7, '#fff8', 'center', false);
