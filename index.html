@@ -148,7 +148,9 @@
     { id: 'magenta', name: 'PLASMA PINK', label: 'PINK', c1: '#ffffff', c2: '#ff22ee', c3: '#660044', glow: '#ff00ff', trail: '#ff44ff', req: 0 },
     { id: 'gold', name: 'SOLAR GOLD', label: 'GOLD', c1: '#ffffdd', c2: '#ffcc00', c3: '#cc4400', glow: '#ffaa00', trail: '#ffdd00', req: 3 },
     { id: 'matrix', name: 'VOID MATRIX', label: 'MATRIX', c1: '#ccffcc', c2: '#00ff66', c3: '#003311', glow: '#00ff88', trail: '#00ff66', req: 10 },
-    { id: 'ylazia', name: 'YLAZIA', label: 'YLAZIA', c1: '#ff66dd', c2: '#7a0bc0', c3: '#090114', glow: '#ff22bb', trail: '#e0119d', req: 0 }
+    { id: 'ylazia', name: 'YLAZIA', label: 'YLAZIA', c1: '#ff66dd', c2: '#7a0bc0', c3: '#090114', glow: '#ff22bb', trail: '#e0119d', req: 0 },
+    { id: 'france', name: 'FRANCE', label: 'FRANCE', c1: '#ffffff', c2: '#0055a4', c3: '#ef4135', glow: '#4da6ff', trail: '#ffffff', req: 0 },
+    { id: 'mexique', name: 'MEXIQUE', label: 'MEXIQUE', c1: '#ffffff', c2: '#006847', c3: '#ce1126', glow: '#00d97e', trail: '#ff4444', req: 0 }
   ];
 
   const BOT_LEVELS = [
@@ -2227,6 +2229,106 @@
     g.restore();
   }
 
+  // Rendu poli des boules drapeaux (France & Mexique)
+  function drawFlagBallSurface(cx, cy, r, rotAngle, type, locked = false) {
+    g.save();
+    g.translate(cx, cy);
+
+    g.save();
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.clip();
+
+    g.save();
+    g.rotate(rotAngle);
+
+    // 3 bandes verticales courbees pour epouser la sphere
+    const leftCol = locked ? '#444444' : (type === 'france' ? '#0047ab' : '#006847');
+    const midCol = locked ? '#888888' : '#f8f9fa';
+    const rightCol = locked ? '#555555' : (type === 'france' ? '#e62e2d' : '#ce1126');
+
+    g.fillStyle = midCol;
+    g.fillRect(-r, -r, r * 2, r * 2);
+
+    g.fillStyle = leftCol;
+    g.beginPath();
+    g.moveTo(-r, -r);
+    g.lineTo(-r * 0.34, -r);
+    g.quadraticCurveTo(-r * 0.24, 0, -r * 0.34, r);
+    g.lineTo(-r, r);
+    g.closePath();
+    g.fill();
+
+    g.fillStyle = rightCol;
+    g.beginPath();
+    g.moveTo(r, -r);
+    g.lineTo(r * 0.34, -r);
+    g.quadraticCurveTo(r * 0.24, 0, r * 0.34, r);
+    g.lineTo(r, r);
+    g.closePath();
+    g.fill();
+
+    // Embleme dore et vert du drapeau mexicain au centre
+    if (type === 'mexique') {
+      g.fillStyle = locked ? '#666666' : '#c8962e';
+      g.beginPath();
+      g.arc(0, -r * 0.02, r * 0.17, 0, Math.PI * 2);
+      g.fill();
+
+      g.strokeStyle = locked ? '#444444' : '#006847';
+      g.lineWidth = Math.max(1, r * 0.075);
+      g.beginPath();
+      g.arc(0, r * 0.03, r * 0.22, 0.25, Math.PI - 0.25);
+      g.stroke();
+    }
+
+    // Trois trous de bowling realistes
+    const holes = [
+      { x: -r * 0.20, y: -r * 0.38, hr: r * 0.125 },
+      { x: r * 0.18, y: -r * 0.38, hr: r * 0.125 },
+      { x: 0, y: r * 0.36, hr: r * 0.15 }
+    ];
+    for (let i = 0; i < holes.length; i++) {
+      const h = holes[i];
+      g.fillStyle = 'rgba(0, 0, 0, 0.28)';
+      g.beginPath();
+      g.arc(h.x, h.y, h.hr * 1.18, 0, Math.PI * 2);
+      g.fill();
+
+      g.fillStyle = '#090212';
+      g.beginPath();
+      g.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
+      g.fill();
+    }
+
+    g.restore();
+
+    // Ombrage 3D spherique + reflet vernis
+    const shadeGr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
+    shadeGr.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
+    shadeGr.addColorStop(0.55, 'rgba(0, 0, 0, 0)');
+    shadeGr.addColorStop(1, 'rgba(0, 0, 0, 0.56)');
+    g.fillStyle = shadeGr;
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.fill();
+
+    g.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    g.beginPath();
+    g.ellipse(-r * 0.32, -r * 0.48, r * 0.22, r * 0.11, -0.5, 0, Math.PI * 2);
+    g.fill();
+
+    g.restore();
+
+    g.strokeStyle = locked ? 'rgba(130,130,130,0.4)' : 'rgba(255, 255, 255, 0.48)';
+    g.lineWidth = Math.max(0.8, r * 0.04);
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.stroke();
+
+    g.restore();
+  }
+
   function drawBall() {
     if (!ball || !isFinite(ball.x) || !isFinite(ball.y) || ball.x < 0) return;
     const sk = SKINS[stats.skin] || SKINS[0];
@@ -2254,6 +2356,11 @@
 
     if (sk.id === 'ylazia') {
       drawYlaziaSurface(x, y - r * 0.3, r, ball.rot * 0.45 + ball.spin * 0.5, false);
+      return;
+    }
+
+    if (sk.id === 'france' || sk.id === 'mexique') {
+      drawFlagBallSurface(x, y - r * 0.3, r, ball.rot * 0.45 + ball.spin * 0.5, sk.id, false);
       return;
     }
 
@@ -2629,11 +2736,11 @@
       txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 428, 6.8, '#fffb', 'center', false);
     }
 
-    // Sélecteur de boules Arcade (incluant Ylazia)
+    // Sélecteur de boules Arcade (incluant Ylazia, France et Mexique)
     txt('BOULE ARCADE', W / 2, 476, 8, '#0f8', 'center', false);
     const skinCount = SKINS.length;
-    const skinGap = 8;
-    const totalW = W - 44;
+    const skinGap = 5;
+    const totalW = W - 28;
     const boxW = Math.floor((totalW - skinGap * (skinCount - 1)) / skinCount);
     const startX = Math.floor((W - (boxW * skinCount + skinGap * (skinCount - 1))) / 2);
 
@@ -2650,11 +2757,13 @@
           tone(160, 0.15, 'sawtooth');
           say('BLOQUE', '#f35', 55, sk.req + ' STRIKES REQUIS');
         }
-      }, 6.5, sk.glow, !unlocked);
+      }, 6, sk.glow, !unlocked);
 
-      const cx = bx + boxW / 2, cy = 507, r = 11.5;
+      const cx = bx + boxW / 2, cy = 507, r = 10.5;
       if (sk.id === 'ylazia') {
         drawYlaziaSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, !unlocked);
+      } else if (sk.id === 'france' || sk.id === 'mexique') {
+        drawFlagBallSurface(cx, cy, r, sel ? Math.sin(tk * 0.05) * 0.12 : 0, sk.id, !unlocked);
       } else {
         const gr = g.createRadialGradient(cx - 3, cy - 3, 1, cx, cy, r);
         gr.addColorStop(0, unlocked ? sk.c1 : '#666');
@@ -2667,7 +2776,7 @@
       }
 
       const labelTxt = unlocked ? (sk.label || sk.name.split(' ')[1]) : sk.req + 'X';
-      txt(labelTxt, cx, 533, 6.2, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
+      txt(labelTxt, cx, 533, 5.2, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'center', false);
     });
 
     const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
