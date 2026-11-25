@@ -231,7 +231,6 @@
   let onlineCapacity = 2;
   let botDiff = 1;
 
-  // État du menu déroulant de sélection de boule (scroll pixel + inertie + verrou tap)
   let ballMenuOpen = false;
   let ballScrollPx = 0;
   let ballScrollVel = 0;
@@ -283,7 +282,7 @@
     const finalNick = sanitizeNick(nickInputEl.value, 'JOUEUR');
     myNick = finalNick;
     nickInputEl.value = finalNick;
-    stats.nick = finalNick;
+    stats.nick = myNick;
     saveStats();
   });
 
@@ -706,6 +705,12 @@
     roomRoster = [];
     onlineSub = 'lobby';
     lobbyScroll = 0;
+  }
+
+  function openMentionsLegalesPage() {
+    ballMenuOpen = false;
+    closeNetwork();
+    window.location.href = 'mentions-legales.html';
   }
 
   function genCode() {
@@ -1894,7 +1899,6 @@
     }
   }
 
-  // Trous identiques (style boule FRANCE) dessinés sur n'importe quel contexte à rayon r
   function drawStandardBallHoles(ctx, r, locked = false) {
     const holes = [
       { x: -r * 0.22, y: -r * 0.38, hr: r * 0.12 },
@@ -3132,7 +3136,7 @@
     }
 
     const activeSkin = SKINS[stats.skin] || SKINS[0];
-    const selBtnX = 40, selBtnY = 382, selBtnW = W - 80, selBtnH = 56;
+    const selBtnX = 40, selBtnY = 382, selBtnW = W - 80, selBtnH = 54;
     btn(selBtnX, selBtnY, selBtnW, selBtnH, '', ballMenuOpen, () => {
       ballMenuOpen = !ballMenuOpen;
       if (ballMenuOpen) {
@@ -3145,23 +3149,28 @@
 
     drawSkinPreview(activeSkin, selBtnX + 30, selBtnY + selBtnH / 2, 15, false, Math.sin(tk * 0.05) * 0.12);
     txt('SELECTIONNER BOULE', selBtnX + 58, selBtnY + 21, 7.8, ballMenuOpen ? '#05010f' : '#0f8', 'left', false);
-    txt(activeSkin.name + (ballMenuOpen ? ' ▲' : ' ▼'), selBtnX + 58, selBtnY + 41, 6.8, ballMenuOpen ? '#05010f' : '#fff', 'left', false);
+    txt(activeSkin.name + (ballMenuOpen ? ' ▲' : ' ▼'), selBtnX + 58, selBtnY + 40, 6.8, ballMenuOpen ? '#05010f' : '#fff', 'left', false);
 
     const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
-    btn(90, 458, 300, 48, mainLabel, !ballMenuOpen && Math.floor(tk / 28) % 2 === 0, () => {
+    btn(90, 448, 300, 44, mainLabel, !ballMenuOpen && Math.floor(tk / 28) % 2 === 0, () => {
       if (playType === 'online') {
         openOnlineLobby();
         tone(620, 0.08);
       } else {
         startGame();
       }
-    }, 14, '#ff0');
+    }, 13, '#ff0');
 
-    btn(90, 518, 142, 34, 'RECORDS', false, () => { ballMenuOpen = false; st = 'stats'; tone(580, 0.07); }, 7.8, '#0ff');
-    btn(248, 518, 142, 34, mute ? 'SON : OFF' : 'SON : ON', false, () => {
+    btn(90, 502, 142, 32, 'RECORDS', false, () => { ballMenuOpen = false; st = 'stats'; tone(580, 0.07); }, 7.5, '#0ff');
+    btn(248, 502, 142, 32, mute ? 'SON : OFF' : 'SON : ON', false, () => {
       initAudio();
       mute = !mute;
-    }, 7.8, '#f0f');
+    }, 7.5, '#f0f');
+
+    btn(90, 544, 300, 32, 'MENTIONS LEGALES', false, () => {
+      tone(540, 0.06);
+      openMentionsLegalesPage();
+    }, 7.5, '#ff0');
 
     [
       '1. PLACE LA BOULE • 2. BLOQUE L ANGLE',
