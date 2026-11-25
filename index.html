@@ -126,7 +126,6 @@
   const ballSpriteCache = new Map();
   let staticLaneCanvas = null;
 
-  // Détection de la catégorie d'appareil pour adapter la liste de boules
   let deviceKind = isTouchDevice ? 'mobile' : 'pc';
 
   function detectDeviceKind() {
@@ -232,13 +231,14 @@
   let onlineCapacity = 2;
   let botDiff = 1;
 
-  // État du menu déroulant de sélection de boule (scroll pixel + inertie)
+  // État du menu déroulant de sélection de boule (scroll pixel + inertie + verrou tap)
   let ballMenuOpen = false;
   let ballScrollPx = 0;
   let ballScrollVel = 0;
   let ballDragActive = false;
   let ballDragLastY = 0;
   let ballDragMoved = false;
+  let ballScrollLocked = false;
   let lastDropdownMetrics = { boxX: 22, boxY: 220, boxW: W - 44, boxH: 480, listTop: 264, listH: 420, maxScroll: 0 };
 
   function cleanNickChars(raw) {
@@ -1605,7 +1605,6 @@
       b.x = b.cx + Math.sin((tk / 60) * b.sp + b.ph) * b.amp;
     }
 
-    // Inertie douce du scroll dans le menu déroulant des boules
     if (ballMenuOpen && !ballDragActive && Math.abs(ballScrollVel) > 0.15) {
       ballScrollPx = clamp(ballScrollPx + ballScrollVel, 0, lastDropdownMetrics.maxScroll);
       ballScrollVel *= 0.88;
@@ -1833,7 +1832,7 @@
   }
 
   /* ==========================================================================
-     6. RENDU OPTIMISE & LISTE DES BOULES ADAPTEE (MOBILE / PC / AUTRES)
+     6. RENDU OPTIMISE, TROUS UNIFORMES & LISTE DES BOULES ADAPTEE
      ========================================================================== */
   const VS = 1.25, S0 = 1 / 2.2;
   function P(x, y) {
@@ -1882,8 +1881,8 @@
     if (blur && !isTouchDevice) ctx.shadowBlur = 0;
   }
 
-  function btn(x, y, w, h, l, sel, fn, sz = 9, c = '#0ff', locked = false) {
-    hits.push({ x, y, w, h, fn });
+  function btn(x, y, w, h, l, sel, fn, sz = 9, c = '#0ff', locked = false, noTapSelect = false) {
+    hits.push({ x, y, w, h, fn, noTapSelect });
     const hv = mx >= x && mx <= x + w && my >= y && my <= y + h;
     g.fillStyle = locked ? '#ffffff08' : (sel ? c : (hv ? '#ffffff2c' : '#ffffff12'));
     g.fillRect(x, y, w, h);
@@ -1892,6 +1891,27 @@
     g.strokeRect(x, y, w, h);
     if (l) {
       txt(l, x + w / 2, y + h / 2 + sz / 2 - 1, sz, locked ? '#777' : (sel ? '#05010f' : '#fff'), 'center', false);
+    }
+  }
+
+  // Trous identiques (style boule FRANCE) dessinés sur n'importe quel contexte à rayon r
+  function drawStandardBallHoles(ctx, r, locked = false) {
+    const holes = [
+      { x: -r * 0.22, y: -r * 0.38, hr: r * 0.12 },
+      { x: r * 0.20, y: -r * 0.38, hr: r * 0.12 },
+      { x: -r * 0.02, y: r * 0.36, hr: r * 0.145 }
+    ];
+    for (let i = 0; i < holes.length; i++) {
+      const h = holes[i];
+      ctx.fillStyle = locked ? 'rgba(220, 220, 220, 0.35)' : 'rgba(255, 255, 255, 0.45)';
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.hr * 1.18, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#090212';
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -2192,27 +2212,7 @@
     g.stroke();
     g.restore();
 
-    const holes = [
-      { x: -r * 0.52, y: -r * 0.12, hr: r * 0.135 },
-      { x: -r * 0.20, y: -r * 0.07, hr: r * 0.135 },
-      { x: -r * 0.33, y: r * 0.36, hr: r * 0.165 }
-    ];
-    for (let i = 0; i < holes.length; i++) {
-      const h = holes[i];
-      g.fillStyle = locked ? 'rgba(180,180,180,0.45)' : 'rgba(225, 130, 255, 0.72)';
-      g.beginPath();
-      g.arc(h.x + r * 0.015, h.y + r * 0.015, h.hr * 1.16, 0, Math.PI * 2);
-      g.fill();
-
-      const hGr = g.createRadialGradient(h.x + h.hr * 0.25, h.y + h.hr * 0.25, h.hr * 0.1, h.x, h.y, h.hr);
-      hGr.addColorStop(0, '#180428');
-      hGr.addColorStop(1, '#020005');
-      g.fillStyle = hGr;
-      g.beginPath();
-      g.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
-      g.fill();
-    }
-
+    drawStandardBallHoles(g, r, locked);
     g.restore();
 
     g.save();
@@ -2532,37 +2532,7 @@
       ctx.stroke();
     }
 
-    const holes = type === 'rennes'
-      ? [
-          { x: -r * 0.56, y: -r * 0.56, hr: r * 0.105 },
-          { x: r * 0.56, y: -r * 0.56, hr: r * 0.105 },
-          { x: 0, y: r * 0.72, hr: r * 0.125 }
-        ]
-      : type === 'bretagne'
-        ? [
-            { x: r * 0.34, y: -r * 0.52, hr: r * 0.11 },
-            { x: r * 0.66, y: -r * 0.36, hr: r * 0.11 },
-            { x: r * 0.46, y: r * 0.36, hr: r * 0.135 }
-          ]
-        : [
-            { x: -r * 0.22, y: -r * 0.38, hr: r * 0.12 },
-            { x: r * 0.20, y: -r * 0.38, hr: r * 0.12 },
-            { x: -r * 0.02, y: r * 0.36, hr: r * 0.145 }
-          ];
-
-    for (let i = 0; i < holes.length; i++) {
-      const h = holes[i];
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
-      ctx.beginPath();
-      ctx.arc(h.x, h.y, h.hr * 1.18, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#090212';
-      ctx.beginPath();
-      ctx.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
+    drawStandardBallHoles(ctx, r, locked);
     ctx.restore();
 
     const shadeGr = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
@@ -2617,6 +2587,12 @@
     g.beginPath();
     g.arc(cx, cy, r, 0, Math.PI * 2);
     g.fill();
+
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(rotAngle);
+    drawStandardBallHoles(g, r, locked);
+    g.restore();
   }
 
   function drawBall() {
@@ -2665,12 +2641,7 @@
     g.save();
     g.translate(x, y - r * 0.3);
     g.rotate(ball.rot + ball.spin * 0.6);
-    g.fillStyle = 'rgba(5, 1, 15, 0.65)';
-    [[-0.25, -0.35], [0.22, -0.4], [-0.02, -0.05]].forEach(([hx, hy]) => {
-      g.beginPath();
-      g.arc(hx * r, hy * r, r * 0.13, 0, 7);
-      g.fill();
-    });
+    drawStandardBallHoles(g, r, false);
     g.restore();
   }
 
@@ -2949,14 +2920,12 @@
     syncFirebaseLobby();
   }
 
-  // Rendu de la liste déroulante des boules adapté à chaque type d'appareil
   function drawBallDropdown() {
     overlay(0.62);
 
     let boxX, boxY, boxW, boxH, itemH, itemGap, cols, ballR, nameSize, badgeSize, modeTag;
 
     if (deviceKind === 'mobile') {
-      // Version MOBILE : grand panneau vertical tactile, lignes hautes et grosses boules
       boxX = 16;
       boxY = 175;
       boxW = W - 32;
@@ -2969,7 +2938,6 @@
       badgeSize = 7.2;
       modeTag = 'MOBILE • GLISSE POUR SCROLLER';
     } else if (deviceKind === 'pc') {
-      // Version PC : grand panneau à 2 colonnes compactes et précises à la souris / molette
       boxX = 18;
       boxY = 188;
       boxW = W - 36;
@@ -2982,7 +2950,6 @@
       badgeSize = 6.4;
       modeTag = 'PC • MOLETTE / CLIC';
     } else {
-      // Version AUTRES APPAREILS (écrans larges / ratios intermédiaires)
       boxX = 24;
       boxY = 182;
       boxW = W - 48;
@@ -3002,7 +2969,6 @@
     g.lineWidth = 3;
     g.strokeRect(boxX, boxY, boxW, boxH);
 
-    // En-tête du panneau
     g.fillStyle = '#18084d';
     g.fillRect(boxX + 3, boxY + 3, boxW - 6, 44);
     txt('BOULES (' + SKINS.length + ')', boxX + 14, boxY + 23, 8.6, '#0f8', 'left', false);
@@ -3021,16 +2987,6 @@
 
     ballScrollPx = clamp(ballScrollPx, 0, maxScroll);
     lastDropdownMetrics = { boxX, boxY, boxW, boxH, listTop, listH, maxScroll };
-
-    // Zone de capture de drag/scroll pour la liste
-    hits.push({
-      x: boxX,
-      y: listTop,
-      w: boxW - 14,
-      h: listH,
-      fn: null,
-      isBallScrollArea: true
-    });
 
     g.save();
     g.beginPath();
@@ -3052,7 +3008,7 @@
       if (iy + itemH < listTop - 10 || iy > listTop + listH + 10) continue;
 
       btn(ix, iy, colW, itemH, '', sel, () => {
-        if (ballDragMoved) return;
+        if (ballDragMoved || ballScrollLocked) return;
         if (unlocked) {
           stats.skin = i;
           saveStats();
@@ -3063,7 +3019,7 @@
           tone(160, 0.15, 'sawtooth');
           say('BLOQUE', '#f35', 55, sk.req + ' STRIKES REQUIS');
         }
-      }, 7, sk.glow, !unlocked);
+      }, 7, sk.glow, !unlocked, true);
 
       const previewX = ix + 10 + ballR;
       const previewY = iy + itemH / 2;
@@ -3072,7 +3028,7 @@
       const textX = ix + 18 + ballR * 2;
       if (cols === 1) {
         txt(sk.name, textX, iy + itemH * 0.42, nameSize, sel ? '#05010f' : (unlocked ? '#fff' : '#888'), 'left', false);
-        const subTxt = sel ? 'BOULE SELECTIONNEE' : (unlocked ? 'APPUYER POUR EQUIPER' : 'DEBLOQUE A ' + sk.req + ' STRIKES');
+        const subTxt = sel ? 'BOULE SELECTIONNEE' : (unlocked ? 'TAP POUR EQUIPER' : 'DEBLOQUE A ' + sk.req + ' STRIKES');
         txt(subTxt, textX, iy + itemH * 0.74, badgeSize, sel ? '#05010f' : (unlocked ? '#0f8' : '#f55'), 'left', false);
       } else {
         const shortName = sk.name.length > 12 ? sk.label || sk.name.slice(0, 11) : sk.name;
@@ -3084,7 +3040,6 @@
 
     g.restore();
 
-    // Barre de défilement visible sur le côté droit
     if (maxScroll > 0) {
       const trackX = boxX + boxW - 11;
       const trackY = listTop + 2;
@@ -3176,13 +3131,13 @@
       txt('POCHE 1-3 + EFFET POUR UN VRAI STRIKE', W / 2, 346, 6.5, '#fffb', 'center', false);
     }
 
-    // Bouton "SELECTIONNER BOULE"
     const activeSkin = SKINS[stats.skin] || SKINS[0];
     const selBtnX = 40, selBtnY = 382, selBtnW = W - 80, selBtnH = 56;
     btn(selBtnX, selBtnY, selBtnW, selBtnH, '', ballMenuOpen, () => {
       ballMenuOpen = !ballMenuOpen;
       if (ballMenuOpen) {
         ballScrollVel = 0;
+        ballScrollLocked = false;
         ballScrollPx = Math.max(0, stats.skin * 52 - 90);
       }
       tone(580, 0.06);
@@ -3548,7 +3503,7 @@
   }
 
   /* ==========================================================================
-     7. CONTROLES PC & MOBILE (SCROLL LISTE, CLIC/TAP & SWIPE) & BOUCLE
+     7. CONTROLES PC & MOBILE (SCROLL ANTI-FAUX-TAP, CLIC/TAP & SWIPE)
      ========================================================================== */
   function cpos(e) {
     const r = cv.getBoundingClientRect();
@@ -3568,7 +3523,6 @@
     if (st === 'roll') steerOn = true;
   }
 
-  // Molette souris sur la liste des boules
   cv.addEventListener('wheel', e => {
     if (st === 'menu' && ballMenuOpen) {
       e.preventDefault();
@@ -3582,12 +3536,16 @@
 
     if (st === 'menu' && ballMenuOpen && ballDragActive) {
       const dy = my - ballDragLastY;
-      if (Math.abs(my - sy) > 7) {
+      const distFromStart = Math.hypot(mx - sx, my - sy);
+      if (distFromStart > 14) {
         ballDragMoved = true;
+        ballScrollLocked = true;
         moved = true;
       }
-      ballScrollPx = clamp(ballScrollPx - dy, 0, lastDropdownMetrics.maxScroll);
-      ballScrollVel = -dy * 0.65;
+      if (ballScrollLocked) {
+        ballScrollPx = clamp(ballScrollPx - dy, 0, lastDropdownMetrics.maxScroll);
+        ballScrollVel = -dy * 0.65;
+      }
       ballDragLastY = my;
       return;
     }
@@ -3617,6 +3575,10 @@
         ballDragActive = true;
         ballDragLastY = my;
         ballScrollVel = 0;
+        if (Math.abs(ballScrollVel) < 0.8) {
+          ballScrollLocked = false;
+        }
+        return;
       }
     }
 
@@ -3625,13 +3587,16 @@
       if (!h.fn) continue;
       if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) {
         hitBtn = true;
-        h.fn();
+        if (!h.noTapSelect) {
+          h.fn();
+        }
         return;
       }
     }
 
-    if (st === 'menu' && ballMenuOpen && !ballDragActive) {
+    if (st === 'menu' && ballMenuOpen) {
       ballMenuOpen = false;
+      ballScrollLocked = false;
       return;
     }
 
@@ -3652,11 +3617,26 @@
 
   function up(e) {
     if (!ptrDown) return;
+    const wasDraggingBallList = st === 'menu' && ballMenuOpen && ballDragActive;
+    const didScrollOrMove = ballDragMoved || ballScrollLocked || Math.hypot(mx - sx, my - sy) > 14;
     ptrDown = false;
     ballDragActive = false;
 
     if (st === 'menu' && ballMenuOpen) {
       swipeMode = false;
+      if (wasDraggingBallList && !didScrollOrMove) {
+        for (let i = hits.length - 1; i >= 0; i--) {
+          const h = hits[i];
+          if (!h.fn || !h.noTapSelect) continue;
+          if (mx >= h.x && mx <= h.x + h.w && my >= h.y && my <= h.y + h.h) {
+            h.fn();
+            break;
+          }
+        }
+      }
+      if (!didScrollOrMove) {
+        ballScrollLocked = false;
+      }
       return;
     }
 
