@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#04010c">
 <title>Mentions legales - NolBowling</title>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -17,20 +17,14 @@
     min-height: 100dvh;
     background: radial-gradient(circle at 50% 15%, #230754 0%, #09021c 55%, #03000a 100%);
     color: #ffffff;
-    font-family: 'Press Start+2P', monospace;
-    line-height: 1.75;
+    font-family: 'Press Start 2P', monospace;
+    line-height: 1.85;
   }
   .page {
-    max-width: 720px;
+    width: 100%;
+    max-width: 880px;
     margin: 0 auto;
-    padding: 24px 18px 48px;
-  }
-  .card {
-    background: rgba(11, 4, 40, 0.92);
-    border: 2px solid #ff00ff;
-    border-radius: 14px;
-    box-shadow: 0 0 36px rgba(255, 0, 255, 0.25), 0 0 0 3px rgba(0, 255, 255, 0.2);
-    padding: 22px 18px;
+    padding: clamp(16px, 4vw, 40px) clamp(14px, 3.5vw, 28px) clamp(36px, 6vw, 64px);
   }
   .top-bar {
     display: flex;
@@ -38,7 +32,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 24px;
+    margin-bottom: clamp(18px, 3vw, 28px);
   }
   .btn-back {
     display: inline-block;
@@ -46,43 +40,72 @@
     background: #00ffff;
     color: #05010f;
     border: 2px solid #00ffff;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 9px;
-    box-shadow: 0 0 14px rgba(0, 255, 255, 0.45);
+    border-radius: 10px;
+    padding: clamp(10px, 1.5vw, 13px) clamp(14px, 2vw, 20px);
+    font-size: clamp(10px, 1.3vw, 13px);
+    box-shadow: 0 0 16px rgba(0, 255, 255, 0.45);
+    transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
   }
   .btn-back:hover {
     background: #ffff00;
     border-color: #ffff00;
+    transform: translateY(-1px);
+  }
+  .card {
+    background: rgba(11, 4, 40, 0.94);
+    border: 2px solid #ff00ff;
+    border-radius: 16px;
+    box-shadow: 0 0 42px rgba(255, 0, 255, 0.25), 0 0 0 3px rgba(0, 255, 255, 0.2);
+    padding: clamp(20px, 4vw, 40px) clamp(18px, 4.5vw, 44px);
   }
   h1 {
     margin: 0 0 10px;
-    font-size: 18px;
+    font-size: clamp(18px, 3vw, 28px);
+    line-height: 1.45;
     color: #00ffff;
-    text-shadow: 0 0 12px rgba(0, 255, 255, 0.65);
+    text-shadow: 0 0 14px rgba(0, 255, 255, 0.65);
     text-align: center;
   }
   .subtitle {
-    margin: 0 0 26px;
-    font-size: 8px;
+    margin: 0 0 clamp(24px, 4vw, 36px);
+    font-size: clamp(9px, 1.3vw, 12px);
     color: #ffff00;
     text-align: center;
   }
   h2 {
-    margin: 24px 0 10px;
-    font-size: 10px;
+    margin: clamp(24px, 3.5vw, 34px) 0 clamp(10px, 1.5vw, 14px);
+    font-size: clamp(11px, 1.6vw, 15px);
+    line-height: 1.5;
     color: #ff00ff;
-    border-bottom: 1px solid rgba(0, 255, 255, 0.3);
-    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.32);
+    padding-bottom: 8px;
   }
   p {
-    margin: 0 0 12px;
-    font-size: 8px;
-    color: #e6e2ff;
+    margin: 0 0 14px;
+    font-size: clamp(10px, 1.35vw, 13px);
+    line-height: 1.9;
+    color: #ebe7ff;
     word-break: break-word;
+  }
+  code {
+    font-family: inherit;
+    font-size: 0.95em;
+    color: #00ff88;
   }
   a {
     color: #00ffff;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  a:hover {
+    color: #ffff00;
+  }
+
+  @media (max-width: 480px) {
+    .btn-back {
+      width: 100%;
+      text-align: center;
+    }
   }
 </style>
 </head>
