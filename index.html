@@ -116,9 +116,15 @@
   const cv = document.getElementById('c');
   const g = cv.getContext('2d', { alpha: false, desynchronized: true });
   const W = 480, H = 800;
-  const Q = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-  cv.width = W * Q;
-  cv.height = H * Q;
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const Q = isTouchDevice
+    ? Math.min(1.5, Math.max(1, window.devicePixelRatio || 1))
+    : Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  cv.width = Math.round(W * Q);
+  cv.height = Math.round(H * Q);
+
+  // Cache offscreen pour les textures complexes des boules (optimisation mobile 60 FPS)
+  const ballSpriteCache = new Map();
 
   function fit() {
     const vw = window.visualViewport ? window.visualViewport.width : window.innerWidth;
@@ -154,8 +160,8 @@
     { id: 'france', name: 'FRANCE', label: 'FRANCE', c1: '#ffffff', c2: '#0055a4', c3: '#ef4135', glow: '#4da6ff', trail: '#ffffff', req: 0 },
     { id: 'mexique', name: 'MEXIQUE', label: 'MEXIQUE', c1: '#ffffff', c2: '#006847', c3: '#ce1126', glow: '#00d97e', trail: '#ff4444', req: 0 },
     { id: 'pologne', name: 'POLOGNE', label: 'POLOGNE', c1: '#ffffff', c2: '#dc143c', c3: '#8b001e', glow: '#ff4d6d', trail: '#ff4d6d', req: 0 },
-    { id: 'bretagne', name: 'BRETAGNE', label: 'BZH', c1: '#ffffff', c2: '#111111', c3: '#000000', glow: '#ffffff', trail: '#ffffff', req: 0 },
-    { id: 'rennes', name: 'STADE RENNAIS', label: 'RENNES', c1: '#ff4444', c2: '#c8102e', c3: '#111111', glow: '#ff2a3c', trail: '#ff2a3c', req: 0 },
+    { id: 'bretagne', name: 'BRETAGNE (BZH)', label: 'BZH', c1: '#ffffff', c2: '#111111', c3: '#000000', glow: '#ffffff', trail: '#ffffff', req: 0 },
+    { id: 'rennes', name: 'STADE RENNAIS', label: 'RENNES', c1: '#ff3b3b', c2: '#d5001c', c3: '#111111', glow: '#ff2a3c', trail: '#ff2a3c', req: 0 },
     { id: 'nc', name: 'NOUVELLE-CALEDONIE', label: 'NC', c1: '#ffd200', c2: '#0035ad', c3: '#009543', glow: '#ffd200', trail: '#ffd200', req: 0 }
   ];
 
@@ -1165,8 +1171,9 @@
   }
 
   function burst(x, y, n, col, s = 4) {
-    if (parts.length > 130) parts.splice(0, parts.length - 130);
-    const count = Math.min(n, 22);
+    const maxParts = isTouchDevice ? 55 : 110;
+    if (parts.length > maxParts) parts.splice(0, parts.length - maxParts);
+    const count = Math.min(n, isTouchDevice ? 11 : 20);
     for (let i = 0; i < count; i++) {
       const a = Math.random() * 6.283;
       const v = Math.random() * s + 0.6;
@@ -1174,9 +1181,9 @@
         x, y,
         vx: Math.cos(a) * v,
         vy: Math.sin(a) * v,
-        l: 22 + Math.random() * 20,
+        l: 20 + Math.random() * 16,
         c: col,
-        s: Math.random() * 2.8 + 1.2
+        s: Math.random() * 2.6 + 1.2
       });
     }
   }
@@ -1759,18 +1766,20 @@
 
     if (ball && ball.rolling) {
       const sk = SKINS[stats.skin] || SKINS[0];
-      if (tk % 2 === 0) {
-        trails.push({ x: ball.x, y: ball.y, r: ball.r, l: 14, c: gutter ? '#f35' : sk.trail });
-        if (trails.length > 10) trails.shift();
-        if (parts.length < 120) {
+      const stepMod = isTouchDevice ? 3 : 2;
+      if (tk % stepMod === 0) {
+        trails.push({ x: ball.x, y: ball.y, r: ball.r, l: 12, c: gutter ? '#f35' : sk.trail });
+        if (trails.length > (isTouchDevice ? 6 : 10)) trails.shift();
+        const maxParts = isTouchDevice ? 50 : 100;
+        if (parts.length < maxParts) {
           parts.push({
             x: ball.x + (Math.random() - 0.5) * 8,
             y: ball.y + 8,
             vx: (Math.random() - 0.5) * 0.8,
             vy: 0.6,
-            l: 16,
+            l: 14,
             c: gutter ? '#f35' : sk.trail,
-            s: 2.6
+            s: 2.5
           });
         }
       }
@@ -1804,12 +1813,12 @@
       g.strokeText(s, x, y);
     }
     g.fillStyle = col;
-    if (glow) {
+    if (glow && !isTouchDevice) {
       g.shadowColor = col;
       g.shadowBlur = 10;
     }
     g.fillText(s, x, y);
-    if (glow) g.shadowBlur = 0;
+    if (glow && !isTouchDevice) g.shadowBlur = 0;
   }
 
   function quad(a, fill) {
@@ -1823,7 +1832,7 @@
   function line(a, b, col, w, blur = 0) {
     g.strokeStyle = col;
     g.lineWidth = w;
-    if (blur) {
+    if (blur && !isTouchDevice) {
       g.shadowColor = col;
       g.shadowBlur = blur;
     }
@@ -1831,7 +1840,7 @@
     g.moveTo(a[0], a[1]);
     g.lineTo(b[0], b[1]);
     g.stroke();
-    if (blur) g.shadowBlur = 0;
+    if (blur && !isTouchDevice) g.shadowBlur = 0;
   }
 
   function btn(x, y, w, h, l, sel, fn, sz = 9, c = '#0ff', locked = false) {
@@ -2190,138 +2199,207 @@
     g.restore();
   }
 
-  function drawSpecialBallSurface(cx, cy, r, rotAngle, type, locked = false) {
-    g.save();
-    g.translate(cx, cy);
+  // Dessin d'une moucheture d'hermine bretonne authentique (croix supérieure + pointe inférieure évasée)
+  function drawBretonErmine(ctx, hx, hy, size, col) {
+    ctx.fillStyle = col;
+    const dotR = size * 0.21;
+    // Haut
+    ctx.beginPath();
+    ctx.moveTo(hx, hy - size * 0.68);
+    ctx.lineTo(hx + dotR, hy - size * 0.44);
+    ctx.lineTo(hx, hy - size * 0.20);
+    ctx.lineTo(hx - dotR, hy - size * 0.44);
+    ctx.closePath();
+    ctx.fill();
+    // Gauche
+    ctx.beginPath();
+    ctx.moveTo(hx - size * 0.46, hy - size * 0.24);
+    ctx.lineTo(hx - size * 0.22, hy - size * 0.36);
+    ctx.lineTo(hx - size * 0.14, hy - size * 0.12);
+    ctx.lineTo(hx - size * 0.38, hy - size * 0.04);
+    ctx.closePath();
+    ctx.fill();
+    // Droite
+    ctx.beginPath();
+    ctx.moveTo(hx + size * 0.46, hy - size * 0.24);
+    ctx.lineTo(hx + size * 0.22, hy - size * 0.36);
+    ctx.lineTo(hx + size * 0.14, hy - size * 0.12);
+    ctx.lineTo(hx + size * 0.38, hy - size * 0.04);
+    ctx.closePath();
+    ctx.fill();
 
-    g.save();
-    g.beginPath();
-    g.arc(0, 0, r, 0, Math.PI * 2);
-    g.clip();
+    // Queue triangulaire à 3 pointes vers le bas
+    ctx.beginPath();
+    ctx.moveTo(hx, hy - size * 0.08);
+    ctx.lineTo(hx + size * 0.38, hy + size * 0.78);
+    ctx.lineTo(hx + size * 0.13, hy + size * 0.62);
+    ctx.lineTo(hx, hy + size * 0.88);
+    ctx.lineTo(hx - size * 0.13, hy + size * 0.62);
+    ctx.lineTo(hx - size * 0.38, hy + size * 0.78);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-    g.save();
-    g.rotate(rotAngle);
+  // Rendu haute définition pré-calculé sur canvas offscreen pour zéro lag sur mobile
+  function getSpecialBallSprite(type, locked) {
+    const key = `${type}_${locked ? 1 : 0}`;
+    if (ballSpriteCache.has(key)) return ballSpriteCache.get(key);
+
+    const S = 144;
+    const r = 64;
+    const cx = S / 2;
+    const cy = S / 2;
+    const off = document.createElement('canvas');
+    off.width = S;
+    off.height = S;
+    const ctx = off.getContext('2d');
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.clip();
 
     if (type === 'france' || type === 'mexique') {
       const leftCol = locked ? '#444444' : (type === 'france' ? '#0047ab' : '#006847');
       const midCol = locked ? '#888888' : '#f8f9fa';
       const rightCol = locked ? '#555555' : (type === 'france' ? '#e62e2d' : '#ce1126');
 
-      g.fillStyle = midCol;
-      g.fillRect(-r, -r, r * 2, r * 2);
+      ctx.fillStyle = midCol;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
 
-      g.fillStyle = leftCol;
-      g.beginPath();
-      g.moveTo(-r, -r);
-      g.lineTo(-r * 0.34, -r);
-      g.quadraticCurveTo(-r * 0.24, 0, -r * 0.34, r);
-      g.lineTo(-r, r);
-      g.closePath();
-      g.fill();
+      ctx.fillStyle = leftCol;
+      ctx.beginPath();
+      ctx.moveTo(-r, -r);
+      ctx.lineTo(-r * 0.34, -r);
+      ctx.quadraticCurveTo(-r * 0.24, 0, -r * 0.34, r);
+      ctx.lineTo(-r, r);
+      ctx.closePath();
+      ctx.fill();
 
-      g.fillStyle = rightCol;
-      g.beginPath();
-      g.moveTo(r, -r);
-      g.lineTo(r * 0.34, -r);
-      g.quadraticCurveTo(r * 0.24, 0, r * 0.34, r);
-      g.lineTo(r, r);
-      g.closePath();
-      g.fill();
+      ctx.fillStyle = rightCol;
+      ctx.beginPath();
+      ctx.moveTo(r, -r);
+      ctx.lineTo(r * 0.34, -r);
+      ctx.quadraticCurveTo(r * 0.24, 0, r * 0.34, r);
+      ctx.lineTo(r, r);
+      ctx.closePath();
+      ctx.fill();
 
       if (type === 'mexique') {
-        g.fillStyle = locked ? '#666666' : '#c8962e';
-        g.beginPath();
-        g.arc(0, -r * 0.02, r * 0.17, 0, Math.PI * 2);
-        g.fill();
+        ctx.fillStyle = locked ? '#666666' : '#c8962e';
+        ctx.beginPath();
+        ctx.arc(0, -r * 0.02, r * 0.17, 0, Math.PI * 2);
+        ctx.fill();
 
-        g.strokeStyle = locked ? '#444444' : '#006847';
-        g.lineWidth = Math.max(1, r * 0.075);
-        g.beginPath();
-        g.arc(0, r * 0.03, r * 0.22, 0.25, Math.PI - 0.25);
-        g.stroke();
+        ctx.strokeStyle = locked ? '#444444' : '#006847';
+        ctx.lineWidth = r * 0.075;
+        ctx.beginPath();
+        ctx.arc(0, r * 0.03, r * 0.22, 0.25, Math.PI - 0.25);
+        ctx.stroke();
       }
     } else if (type === 'pologne') {
-      // Drapeau de la Pologne : blanc pur en haut, rouge cramoisi pur en bas
-      const topWhite = locked ? '#888888' : '#f8f9fb';
-      const botRed = locked ? '#484848' : '#dc143c';
-
-      g.fillStyle = topWhite;
-      g.fillRect(-r, -r, r * 2, r);
-
-      g.fillStyle = botRed;
-      g.fillRect(-r, 0, r * 2, r);
+      ctx.fillStyle = locked ? '#888888' : '#f8f9fb';
+      ctx.fillRect(-r, -r, r * 2, r);
+      ctx.fillStyle = locked ? '#484848' : '#dc143c';
+      ctx.fillRect(-r, 0, r * 2, r);
     } else if (type === 'bretagne') {
-      // Gwenn ha Du net : fond blanc, 5 bandes noires horizontales, canton noir en haut à gauche + hermines blanches
-      const darkB = locked ? '#262626' : '#0e0e12';
-      const lightB = locked ? '#888888' : '#f8f9fb';
+      // VRAI GWENN HA DU : 9 bandes horizontales (5 noires, 4 blanches) + canton blanc en haut à gauche avec 11 hermines noires
+      const blackB = locked ? '#252525' : '#0b0b0f';
+      const whiteB = locked ? '#929292' : '#ffffff';
 
-      g.fillStyle = lightB;
-      g.fillRect(-r, -r, r * 2, r * 2);
+      ctx.fillStyle = whiteB;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
 
       const bandH = (r * 2) / 9;
-      g.fillStyle = darkB;
+      ctx.fillStyle = blackB;
       for (let bIdx = 0; bIdx < 9; bIdx += 2) {
-        g.fillRect(-r, -r + bIdx * bandH, r * 2.02, bandH + 0.4);
+        ctx.fillRect(-r, -r + bIdx * bandH, r * 2.02, bandH + 0.5);
       }
 
-      const cantW = r * 1.02;
-      const cantH = bandH * 5 + 0.4;
-      g.fillStyle = darkB;
-      g.fillRect(-r, -r, cantW, cantH);
+      const cantX = -r;
+      const cantY = -r;
+      const cantW = r * 1.04;
+      const cantH = bandH * 5;
+      ctx.fillStyle = whiteB;
+      ctx.fillRect(cantX, cantY, cantW, cantH);
 
-      g.fillStyle = lightB;
-      const drawHermine = (hx, hy, hs) => {
-        g.beginPath();
-        g.moveTo(hx - hs * 0.22, hy + hs * 0.12);
-        g.lineTo(hx + hs * 0.22, hy + hs * 0.12);
-        g.lineTo(hx, hy + hs * 1.18);
-        g.closePath();
-        g.fill();
+      ctx.strokeStyle = locked ? '#555555' : 'rgba(0,0,0,0.22)';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(cantX, cantY, cantW, cantH);
 
-        g.beginPath();
-        g.arc(hx, hy - hs * 0.24, hs * 0.34, 0, Math.PI * 2);
-        g.arc(hx - hs * 0.38, hy + hs * 0.04, hs * 0.25, 0, Math.PI * 2);
-        g.arc(hx + hs * 0.38, hy + hs * 0.04, hs * 0.25, 0, Math.PI * 2);
-        g.fill();
-      };
-
-      const hs = r * 0.15;
-      drawHermine(-r * 0.74, -r * 0.72, hs);
-      drawHermine(-r * 0.26, -r * 0.72, hs);
-      drawHermine(-r * 0.50, -r * 0.34, hs);
-      drawHermine(-r * 0.74, 0.0, hs);
-      drawHermine(-r * 0.26, 0.0, hs);
+      const hSize = r * 0.135;
+      [0.22, 0.44, 0.66, 0.88].forEach(fx => {
+        drawBretonErmine(ctx, cantX + cantW * fx, cantY + cantH * 0.21, hSize, blackB);
+      });
+      [0.33, 0.55, 0.77].forEach(fx => {
+        drawBretonErmine(ctx, cantX + cantW * fx, cantY + cantH * 0.52, hSize, blackB);
+      });
+      [0.22, 0.44, 0.66, 0.88].forEach(fx => {
+        drawBretonErmine(ctx, cantX + cantW * fx, cantY + cantH * 0.82, hSize, blackB);
+      });
     } else if (type === 'rennes') {
-      // Stade Rennais : rouge et noir iconique + blason central
-      const redR = locked ? '#666666' : '#c8102e';
-      const blkR = locked ? '#222222' : '#111115';
-      const goldR = locked ? '#888888' : '#f5c542';
+      // STADE RENNAIS F.C. : Rayures verticales Rouge & Noir + Écusson authentique au centre
+      const redSR = locked ? '#666666' : '#d5001c';
+      const blkSR = locked ? '#222222' : '#0f0f13';
+      const whtSR = locked ? '#999999' : '#ffffff';
+      const gldSR = locked ? '#888888' : '#f4c430';
 
-      g.fillStyle = redR;
-      g.fillRect(-r, -r, r * 2, r * 2);
+      const stripeW = (r * 2) / 5;
+      for (let sIdx = 0; sIdx < 5; sIdx++) {
+        ctx.fillStyle = sIdx % 2 === 0 ? redSR : blkSR;
+        ctx.fillRect(-r + sIdx * stripeW, -r, stripeW + 0.5, r * 2);
+      }
 
-      g.fillStyle = blkR;
-      g.beginPath();
-      g.moveTo(-r * 0.36, -r);
-      g.lineTo(r * 0.36, -r);
-      g.lineTo(r * 0.36, r);
-      g.lineTo(-r * 0.36, r);
-      g.closePath();
-      g.fill();
+      const ew = r * 0.56;
+      const eh = r * 0.64;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(-ew, -eh * 0.82);
+      ctx.lineTo(ew, -eh * 0.82);
+      ctx.lineTo(ew, eh * 0.12);
+      ctx.quadraticCurveTo(ew, eh * 0.68, 0, eh * 0.96);
+      ctx.quadraticCurveTo(-ew, eh * 0.68, -ew, eh * 0.12);
+      ctx.closePath();
 
-      g.strokeStyle = locked ? '#777777' : '#ffffff';
-      g.lineWidth = Math.max(1.2, r * 0.09);
-      g.beginPath();
-      g.arc(0, 0, r * 0.42, 0, Math.PI * 2);
-      g.stroke();
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = redSR;
+      ctx.fillRect(-ew, -eh, ew, eh * 2);
+      ctx.fillStyle = blkSR;
+      ctx.fillRect(0, -eh, ew, eh * 2);
 
-      g.strokeStyle = goldR;
-      g.lineWidth = Math.max(1, r * 0.055);
-      g.beginPath();
-      g.arc(0, 0, r * 0.28, 0, Math.PI * 2);
-      g.stroke();
+      ctx.fillStyle = whtSR;
+      ctx.fillRect(-ew, -eh * 0.82, ew * 2, eh * 0.44);
+
+      drawBretonErmine(ctx, -ew * 0.52, -eh * 0.59, r * 0.095, blkSR);
+      drawBretonErmine(ctx, 0, -eh * 0.59, r * 0.095, blkSR);
+      drawBretonErmine(ctx, ew * 0.52, -eh * 0.59, r * 0.095, blkSR);
+
+      ctx.fillStyle = whtSR;
+      ctx.beginPath();
+      ctx.arc(0, eh * 0.24, r * 0.21, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = blkSR;
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+
+      ctx.fillStyle = blkSR;
+      ctx.beginPath();
+      ctx.arc(0, eh * 0.24, r * 0.075, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = gldSR;
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+      ctx.strokeStyle = whtSR;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      ctx.restore();
     } else if (type === 'nc') {
-      // Nouvelle-Calédonie (drapeau Kanaky : bleu, rouge, vert + disque solaire jaune & flèche faîtière)
       const blueNC = locked ? '#3b3b3b' : '#0035ad';
       const redNC = locked ? '#585858' : '#ed2939';
       const greenNC = locked ? '#464646' : '#009543';
@@ -2329,104 +2407,121 @@
       const inkNC = locked ? '#1c1c1c' : '#111115';
 
       const third = (r * 2) / 3;
-      g.fillStyle = blueNC;
-      g.fillRect(-r, -r, r * 2, third + 0.4);
+      ctx.fillStyle = blueNC;
+      ctx.fillRect(-r, -r, r * 2, third + 0.5);
+      ctx.fillStyle = redNC;
+      ctx.fillRect(-r, -r + third, r * 2, third + 0.5);
+      ctx.fillStyle = greenNC;
+      ctx.fillRect(-r, -r + third * 2, r * 2, third + 0.5);
 
-      g.fillStyle = redNC;
-      g.fillRect(-r, -r + third, r * 2, third + 0.4);
-
-      g.fillStyle = greenNC;
-      g.fillRect(-r, -r + third * 2, r * 2, third + 0.4);
-
-      // Disque jaune cerclé de noir légèrement décalé à gauche (comme sur le drapeau officiel)
       const sx = -r * 0.16;
       const sy = 0;
       const sr = r * 0.46;
 
-      g.fillStyle = sunNC;
-      g.beginPath();
-      g.arc(sx, sy, sr, 0, Math.PI * 2);
-      g.fill();
+      ctx.fillStyle = sunNC;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = inkNC;
+      ctx.lineWidth = r * 0.075;
+      ctx.stroke();
 
-      g.strokeStyle = inkNC;
-      g.lineWidth = Math.max(1.1, r * 0.075);
-      g.stroke();
+      ctx.strokeStyle = inkNC;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = r * 0.08;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - sr * 0.85);
+      ctx.lineTo(sx, sy + sr * 0.88);
+      ctx.stroke();
 
-      // Flèche faîtière noire stylisée à l'intérieur du disque solaire
-      g.strokeStyle = inkNC;
-      g.lineCap = 'round';
-      g.lineWidth = Math.max(1.1, r * 0.08);
-      g.beginPath();
-      g.moveTo(sx, sy - sr * 0.85);
-      g.lineTo(sx, sy + sr * 0.88);
-      g.stroke();
+      ctx.fillStyle = inkNC;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - sr * 0.86);
+      ctx.lineTo(sx - sr * 0.22, sy - sr * 0.46);
+      ctx.lineTo(sx + sr * 0.22, sy - sr * 0.46);
+      ctx.closePath();
+      ctx.fill();
 
-      // Traverses et forme du toutoute / flèche faîtière
-      g.fillStyle = inkNC;
-      g.beginPath();
-      g.moveTo(sx, sy - sr * 0.86);
-      g.lineTo(sx - sr * 0.22, sy - sr * 0.46);
-      g.lineTo(sx + sr * 0.22, sy - sr * 0.46);
-      g.closePath();
-      g.fill();
+      ctx.beginPath();
+      ctx.arc(sx, sy - sr * 0.12, sr * 0.20, 0, Math.PI * 2);
+      ctx.arc(sx, sy + sr * 0.30, sr * 0.24, 0, Math.PI * 2);
+      ctx.fill();
 
-      g.beginPath();
-      g.arc(sx, sy - sr * 0.12, sr * 0.20, 0, Math.PI * 2);
-      g.arc(sx, sy + sr * 0.30, sr * 0.24, 0, Math.PI * 2);
-      g.fill();
-
-      g.lineWidth = Math.max(1, r * 0.065);
-      g.beginPath();
-      g.moveTo(sx - sr * 0.36, sy - sr * 0.30);
-      g.lineTo(sx + sr * 0.36, sy - sr * 0.30);
-      g.moveTo(sx - sr * 0.42, sy + sr * 0.62);
-      g.quadraticCurveTo(sx, sy + sr * 0.48, sx + sr * 0.42, sy + sr * 0.62);
-      g.stroke();
+      ctx.lineWidth = r * 0.065;
+      ctx.beginPath();
+      ctx.moveTo(sx - sr * 0.36, sy - sr * 0.30);
+      ctx.lineTo(sx + sr * 0.36, sy - sr * 0.30);
+      ctx.moveTo(sx - sr * 0.42, sy + sr * 0.62);
+      ctx.quadraticCurveTo(sx, sy + sr * 0.48, sx + sr * 0.42, sy + sr * 0.62);
+      ctx.stroke();
     }
 
-    // Trois trous de bowling realistes
-    const holes = [
-      { x: -r * 0.22, y: -r * 0.38, hr: r * 0.12 },
-      { x: r * 0.20, y: -r * 0.38, hr: r * 0.12 },
-      { x: -r * 0.02, y: r * 0.36, hr: r * 0.145 }
-    ];
+    // Trois trous de bowling réalistes décalés pour laisser voir le Gwenn ha Du et l'écusson du Stade Rennais
+    const holes = type === 'rennes'
+      ? [
+          { x: -r * 0.56, y: -r * 0.56, hr: r * 0.105 },
+          { x: r * 0.56, y: -r * 0.56, hr: r * 0.105 },
+          { x: 0, y: r * 0.72, hr: r * 0.125 }
+        ]
+      : type === 'bretagne'
+        ? [
+            { x: r * 0.34, y: -r * 0.52, hr: r * 0.11 },
+            { x: r * 0.66, y: -r * 0.36, hr: r * 0.11 },
+            { x: r * 0.46, y: r * 0.36, hr: r * 0.135 }
+          ]
+        : [
+            { x: -r * 0.22, y: -r * 0.38, hr: r * 0.12 },
+            { x: r * 0.20, y: -r * 0.38, hr: r * 0.12 },
+            { x: -r * 0.02, y: r * 0.36, hr: r * 0.145 }
+          ];
+
     for (let i = 0; i < holes.length; i++) {
       const h = holes[i];
-      g.fillStyle = 'rgba(0, 0, 0, 0.32)';
-      g.beginPath();
-      g.arc(h.x, h.y, h.hr * 1.18, 0, Math.PI * 2);
-      g.fill();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.hr * 1.18, 0, Math.PI * 2);
+      ctx.fill();
 
-      g.fillStyle = '#090212';
-      g.beginPath();
-      g.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
-      g.fill();
+      ctx.fillStyle = '#090212';
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.hr, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    g.restore();
+    ctx.restore();
 
-    const shadeGr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
-    shadeGr.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
+    const shadeGr = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r);
+    shadeGr.addColorStop(0, 'rgba(255, 255, 255, 0.36)');
     shadeGr.addColorStop(0.55, 'rgba(0, 0, 0, 0)');
-    shadeGr.addColorStop(1, 'rgba(0, 0, 0, 0.56)');
-    g.fillStyle = shadeGr;
-    g.beginPath();
-    g.arc(0, 0, r, 0, Math.PI * 2);
-    g.fill();
+    shadeGr.addColorStop(1, 'rgba(0, 0, 0, 0.54)');
+    ctx.fillStyle = shadeGr;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
 
-    g.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    g.beginPath();
-    g.ellipse(-r * 0.32, -r * 0.48, r * 0.22, r * 0.11, -0.5, 0, Math.PI * 2);
-    g.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.32, -r * 0.48, r * 0.20, r * 0.10, -0.5, 0, Math.PI * 2);
+    ctx.fill();
 
-    g.restore();
+    ctx.strokeStyle = locked ? 'rgba(130,130,130,0.4)' : 'rgba(255, 255, 255, 0.52)';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, r - 1, 0, Math.PI * 2);
+    ctx.stroke();
 
-    g.strokeStyle = locked ? 'rgba(130,130,130,0.4)' : 'rgba(255, 255, 255, 0.48)';
-    g.lineWidth = Math.max(0.8, r * 0.04);
-    g.beginPath();
-    g.arc(0, 0, r, 0, Math.PI * 2);
-    g.stroke();
+    ctx.restore();
+    ballSpriteCache.set(key, off);
+    return off;
+  }
 
+  function drawSpecialBallSurface(cx, cy, r, rotAngle, type, locked = false) {
+    const sprite = getSpecialBallSprite(type, locked);
+    const scale = (r * 2) / 128;
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(rotAngle);
+    g.drawImage(sprite, -72 * scale, -72 * scale, 144 * scale, 144 * scale);
     g.restore();
   }
 
@@ -3399,6 +3494,11 @@
     swipeMode = false;
   });
 
+  // Pré-chauffage du cache des sprites de boules au démarrage pour éviter tout micro-freeze au 1er affichage
+  ['france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].forEach(t => {
+    getSpecialBallSprite(t, false);
+  });
+
   rack();
   newBall();
   ball.x = -100;
@@ -3407,15 +3507,17 @@
   let acc = 0;
 
   function loop(now) {
-    acc += Math.min(now - last, 50);
+    const dt = Math.min(now - last, 50);
+    acc += dt;
     last = now;
     let steps = 0;
-    while (acc >= 16.667 && steps < 3) {
+    const maxSteps = isTouchDevice ? 2 : 3;
+    while (acc >= 16.667 && steps < maxSteps) {
       update();
       acc -= 16.667;
       steps++;
     }
-    if (steps === 3) acc = 0;
+    if (steps >= maxSteps) acc = 0;
     draw();
     requestAnimationFrame(loop);
   }
