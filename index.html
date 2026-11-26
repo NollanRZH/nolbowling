@@ -103,6 +103,7 @@
      1. INITIALISATION, DETECTION APPAREIL & CONSTANTES
      ========================================================================== */
   const DB_URL = 'https://nolbowling-default-rtdb.europe-west1.firebasedatabase.app';
+  const FB_API_KEY = 'AIzaSyA7RImkkUT9uTxmzj8fTemzbgG2ChXGQO8';
   const PEER_CFG = {
     config: {
       iceServers: [
@@ -258,7 +259,6 @@
   let myNick = sanitizeNick(stats.nick, 'JOUEUR');
   let onlineCount = 1;
   const publicRooms = new Map();
-  const mySessionId = 'nb_' + Math.random().toString(36).slice(2, 11);
   let lastPublishedRoomCode = '';
 
   const nickInputEl = document.getElementById('nickInput');
@@ -333,9 +333,66 @@
     if (disconnectReturnTimer) { clearTimeout(disconnectReturnTimer); disconnectReturnTimer = null; }
   }
 
+  /* --- Authentification anonyme Firebase (API REST) --- */
+  const fbAuth = { uid: null, idToken: null, refreshToken: null, expiresAt: 0, pending: null };
+
+  async function fbSignIn() {
+    if (fbAuth.pending) return fbAuth.pending;
+    fbAuth.pending = (async () => {
+      try {
+        let data = null;
+        let saved = null;
+        try { saved = localStorage.getItem('nb_fb_refresh'); } catch (e) {}
+
+        // 1) on tente de retrouver la même identité anonyme (même uid) via le refresh token
+        if (saved) {
+          const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(saved)
+          });
+          if (r.ok) {
+            const j = await r.json();
+            data = { idToken: j.id_token, refreshToken: j.refresh_token, localId: j.user_id, expiresIn: j.expires_in };
+          }
+        }
+
+        // 2) sinon on crée un nouveau compte anonyme
+        if (!data) {
+          const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ returnSecureToken: true })
+          });
+          if (!r.ok) return false;
+          data = await r.json();
+        }
+
+        if (!data || !data.idToken || !data.localId) return false;
+        fbAuth.idToken = data.idToken;
+        fbAuth.refreshToken = data.refreshToken;
+        fbAuth.uid = data.localId;
+        fbAuth.expiresAt = Date.now() + (Number(data.expiresIn) || 3600) * 1000;
+        try { localStorage.setItem('nb_fb_refresh', data.refreshToken); } catch (e) {}
+        return true;
+      } catch (e) {
+        return false;
+      }
+    })();
+    const res = await fbAuth.pending;
+    fbAuth.pending = null;
+    return res;
+  }
+
+  async function fbEnsureAuth() {
+    if (fbAuth.idToken && Date.now() < fbAuth.expiresAt - 120000) return true;
+    return fbSignIn();
+  }
+
   async function fbPut(path, data) {
     try {
-      await fetch(`${DB_URL}/${path}.json`, {
+      if (!(await fbEnsureAuth())) return;
+      await fetch(`${DB_URL}/${path}.json?auth=${encodeURIComponent(fbAuth.idToken)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -344,13 +401,28 @@
     } catch (e) {}
   }
 
-  async function fbDelete(path) {
-    try {
-      await fetch(`${DB_URL}/${path}.json`, {
-        method: 'DELETE',
-        keepalive: true
-      });
-    } catch (e) {}
+  function fbDelete(path) {
+    const send = () => {
+      try {
+        fetch(`${DB_URL}/${path}.json?auth=${encodeURIComponent(fbAuth.idToken)}`, {
+          method: 'DELETE',
+          keepalive: true
+        }).catch(() => {});
+      } catch (e) {}
+    };
+    // envoi immédiat si le jeton est valide (important pour beforeunload)
+    if (fbAuth.idToken && Date.now() < fbAuth.expiresAt) send();
+    else fbEnsureAuth().then(ok => { if (ok) send(); });
+  }
+
+  // Écrit / supprime uniquement dans MON dossier (rooms/<mon uid>, presence/<mon uid>)
+  async function fbPutOwn(folder, data) {
+    if (!(await fbEnsureAuth()) || !fbAuth.uid) return;
+    return fbPut(`${folder}/${fbAuth.uid}`, data);
+  }
+
+  function fbDeleteOwn(folder) {
+    if (fbAuth.uid) fbDelete(`${folder}/${fbAuth.uid}`);
   }
 
   function publishRoomToFirebase(roomObj) {
@@ -365,7 +437,7 @@
     };
     lastPublishedRoomCode = payload.code;
     publicRooms.set(payload.code, payload);
-    fbPut(`rooms/${payload.code}`, payload);
+    fbPutOwn('rooms', payload);
   }
 
   function removeRoomFromFirebase(code) {
@@ -373,7 +445,7 @@
     if (!target) return;
     if (target === lastPublishedRoomCode) lastPublishedRoomCode = '';
     publicRooms.delete(target);
-    fbDelete(`rooms/${target}`);
+    fbDeleteOwn('rooms');
   }
 
   async function syncFirebaseLobby() {
@@ -395,7 +467,8 @@
               fbDelete(`rooms/${key}`);
               return;
             }
-            const code = String(r.code || key).toUpperCase();
+            const code = String(r.code || '').toUpperCase();
+            if (!/^[A-HJ-NP-Z2-9]{4}$/.test(code)) return;
             const count = Number(r.count) || 1;
             const max = Number(r.max) || 2;
             if (count < max) {
@@ -431,7 +504,7 @@
   }
 
   function sendPresencePing() {
-    fbPut(`presence/${mySessionId}`, {
+    fbPutOwn('presence', {
       ts: Date.now(),
       nick: myNick
     });
@@ -466,7 +539,7 @@
       } else if (lastPublishedRoomCode) {
         removeRoomFromFirebase(lastPublishedRoomCode);
       }
-      fbDelete(`presence/${mySessionId}`);
+      fbDeleteOwn('presence');
     });
   }
 
