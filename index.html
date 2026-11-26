@@ -344,7 +344,6 @@
         let saved = null;
         try { saved = localStorage.getItem('nb_fb_refresh'); } catch (e) {}
 
-        // 1) on tente de retrouver la même identité anonyme (même uid) via le refresh token
         if (saved) {
           const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB_API_KEY}`, {
             method: 'POST',
@@ -357,7 +356,6 @@
           }
         }
 
-        // 2) sinon on crée un nouveau compte anonyme
         if (!data) {
           const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`, {
             method: 'POST',
@@ -410,12 +408,10 @@
         }).catch(() => {});
       } catch (e) {}
     };
-    // envoi immédiat si le jeton est valide (important pour beforeunload)
     if (fbAuth.idToken && Date.now() < fbAuth.expiresAt) send();
     else fbEnsureAuth().then(ok => { if (ok) send(); });
   }
 
-  // Écrit / supprime uniquement dans MON dossier (rooms/<mon uid>, presence/<mon uid>)
   async function fbPutOwn(folder, data) {
     if (!(await fbEnsureAuth()) || !fbAuth.uid) return;
     return fbPut(`${folder}/${fbAuth.uid}`, data);
@@ -728,7 +724,7 @@
   const total = p => calc(p).tot + p.bonus;
 
   /* ==========================================================================
-     5. MULTIJOUEUR P2P (1 A 4 JOUEURS), PHYSIQUE & DEROULEMENT
+     5. MULTIJOUEUR P2P (1 A 4 JOUEURS), ANTI-TRICHE, PHYSIQUE & DEROULEMENT
      ========================================================================== */
   const isBotTurn = () => {
     if (playType === 'bot' && cp === 1) return true;
@@ -741,6 +737,110 @@
     return cp === mySlot;
   };
   const canLocalControl = () => !isBotTurn() && isMyNetTurn();
+
+  const netSec = {
+    lastMsgByPeer: new Map(),
+    warnByPeer: new Map(),
+    turnLaunchSeen: false,
+    turnResSeen: false,
+    lastLaunchMeta: null
+  };
+
+  function resetNetTurnSecurity() {
+    netSec.turnLaunchSeen = false;
+    netSec.turnResSeen = false;
+    netSec.lastLaunchMeta = null;
+  }
+
+  function flagNetCheater(conn, reason) {
+    if (!conn) return;
+    const id = conn.peer || 'unknown';
+    const count = (netSec.warnByPeer.get(id) || 0) + 1;
+    netSec.warnByPeer.set(id, count);
+    if (count >= 3) {
+      try {
+        conn.send({ type: 'kicked', reason: reason || 'ACTION INVALIDE' });
+        conn.close();
+      } catch (e) {}
+    }
+  }
+
+  function validateNetPacket(d, senderPeerId = null) {
+    if (!d || typeof d !== 'object' || typeof d.type !== 'string') return false;
+
+    if (netRole === 'host' && senderPeerId) {
+      const slotEntry = roomRoster.find(r => r.peerId === senderPeerId);
+      if (!slotEntry) return false;
+      const senderSlot = slotEntry.slot;
+
+      if (d.type === 'hello') {
+        return st === 'online' && onlineSub === 'hosting' && typeof d.nick === 'string';
+      }
+      if (['aim', 'launch', 'roll_sync', 'throw_res'].includes(d.type)) {
+        if (senderSlot !== cp || isBotTurn()) return false;
+      }
+      if (d.type === 'rematch') {
+        return false;
+      }
+    }
+
+    if (d.type === 'aim') {
+      if (st !== 'aim') return false;
+      if (!Number.isFinite(d.px) || !Number.isFinite(d.aimA) || !Number.isFinite(d.power)) return false;
+      if (d.px < LL + BR || d.px > LR - BR) return false;
+      if (Math.abs(d.aimA) > 0.45) return false;
+      if (d.power < 0 || d.power > 1.02) return false;
+      if (d.aimLock !== 0 && d.aimLock !== 1) return false;
+      return true;
+    }
+
+    if (d.type === 'launch') {
+      if (st !== 'aim' || netSec.turnLaunchSeen) return false;
+      if (!Number.isFinite(d.px) || !Number.isFinite(d.vx) || !Number.isFinite(d.vy)) return false;
+      if (!Number.isFinite(d.aimA) || !Number.isFinite(d.power)) return false;
+      if (d.px < LL + BR || d.px > LR - BR) return false;
+      if (Math.abs(d.aimA) > 0.45) return false;
+      if (d.power < 0 || d.power > 1.01) return false;
+
+      const expectedSpeed = 7.2 + clamp(d.power, 0, 1) * 9.2;
+      const actualSpeed = Math.hypot(d.vx, d.vy);
+      if (Math.abs(actualSpeed - expectedSpeed) > 0.35 || d.vy >= -5.5) return false;
+      if (Math.abs(d.spin || 0) > 1.05) return false;
+      return true;
+    }
+
+    if (d.type === 'roll_sync') {
+      if (st !== 'roll' || !netSec.turnLaunchSeen) return false;
+      if (!Number.isFinite(d.bx) || !Number.isFinite(d.by) || !Number.isFinite(d.vx) || !Number.isFinite(d.vy)) return false;
+      if (d.bx < 20 || d.bx > 460 || d.by < 0 || d.by > 760) return false;
+      if (Math.hypot(d.vx, d.vy) > 19.5) return false;
+      if (Math.abs(d.spin || 0) > 1.05) return false;
+      return true;
+    }
+
+    if (d.type === 'throw_res') {
+      if ((st !== 'roll' && st !== 'between') || netSec.turnResSeen) return false;
+      if (!Array.isArray(d.pins) || d.pins.length !== pins.length) return false;
+
+      let newDownCount = 0;
+      for (let i = 0; i < pins.length; i++) {
+        const cur = pins[i];
+        const inc = d.pins[i];
+        if (!inc || typeof inc !== 'object') return false;
+        const incDown = !!inc.down;
+        const incGone = !!inc.gone;
+        // Une quille deja tombée/retirée ne peut pas ressurgir pendant un lancer
+        if (cur.gone && !incGone) return false;
+        if (cur.down && !incDown && !incGone) return false;
+        if (incDown && !cur.gone) newDownCount++;
+      }
+      if (newDownCount > sb || newDownCount < 0 || newDownCount > 10) return false;
+      if (d.gutter && newDownCount > 0) return false;
+      return true;
+    }
+
+    return ['full', 'kicked', 'lobby_state', 'start', 'rematch'].includes(d.type);
+  }
 
   function netBroadcastFromHost(data, excludeConn = null) {
     for (let i = 0; i < hostConns.length; i++) {
@@ -773,6 +873,9 @@
     }
     if (guestConn) { try { guestConn.close(); } catch (e) {} guestConn = null; }
     if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+    netSec.lastMsgByPeer.clear();
+    netSec.warnByPeer.clear();
+    resetNetTurnSecurity();
     netRole = null;
     mySlot = 0;
     roomCode = '';
@@ -860,6 +963,17 @@
 
     c.on('data', d => {
       if (!d || typeof d !== 'object') return;
+      const now = performance.now();
+      const lastT = netSec.lastMsgByPeer.get(c.peer) || 0;
+      // Anti-flood : limite la fréquence des paquets entrants
+      if (d.type !== 'throw_res' && d.type !== 'launch' && now - lastT < 16) return;
+      netSec.lastMsgByPeer.set(c.peer, now);
+
+      if (!validateNetPacket(d, c.peer)) {
+        flagNetCheater(c, 'PAQUET SUSPECT BLOQUE');
+        return;
+      }
+
       if (d.type === 'hello') {
         const item = roomRoster.find(r => r.peerId === c.peer);
         if (item && d.nick) {
@@ -921,6 +1035,14 @@
 
   function handleNetData(d) {
     if (!d || typeof d !== 'object') return;
+    if (d.type === 'kicked') {
+      closeNetwork();
+      st = 'online';
+      onlineSub = 'lobby';
+      netStatus = 'EXCLUS : ' + (d.reason || 'TRICHE DETECTEE');
+      tone(130, 0.35, 'sawtooth');
+      return;
+    }
     if (d.type === 'full') {
       netStatus = 'SALON DEJA COMPLET !';
       onlineSub = 'lobby';
@@ -942,56 +1064,69 @@
       nickInputEl.style.display = 'none';
       startGame(true);
     } else if (d.type === 'aim') {
-      if (!isMyNetTurn() && st === 'aim') {
+      if (!isMyNetTurn() && st === 'aim' && validateNetPacket(d)) {
         px = clamp(d.px, LL + BR + 4, LR - BR - 4);
         if (ball) ball.x = px;
         aimLock = d.aimLock;
-        aimA = d.aimA;
-        power = d.power;
+        aimA = clamp(d.aimA, -0.42, 0.42);
+        power = clamp(d.power, 0, 1);
       }
     } else if (d.type === 'launch') {
-      if (!isMyNetTurn() && st === 'aim' && ball) {
+      if (!isMyNetTurn() && st === 'aim' && ball && validateNetPacket(d)) {
+        netSec.turnLaunchSeen = true;
         px = clamp(d.px, LL + BR + 4, LR - BR - 4);
         ball.x = px;
         ball.y = 735;
-        ball.vx = d.vx;
-        ball.vy = d.vy;
-        ball.spin = d.spin || 0;
+        const safePow = clamp(d.power, 0, 1);
+        const safeAng = clamp(d.aimA, -0.42, 0.42);
+        const s = 7.2 + safePow * 9.2;
+        ball.vx = Math.sin(safeAng) * s;
+        ball.vy = -Math.cos(safeAng) * s;
+        ball.spin = clamp(d.spin || 0, -1, 1);
         ball.rolling = true;
-        aimA = d.aimA;
-        power = d.power;
+        aimA = safeAng;
+        power = safePow;
+        netSec.lastLaunchMeta = { pow: safePow, ang: safeAng };
         st = 'roll';
         settleT = 0;
         sb = pins.filter(p => !p.gone).length;
         tone(180, 0.35, 'sawtooth', 0.08, -100);
-        if (d.perfect) {
+        const isActuallyPerfect = safePow > 0.86 && safePow < 0.98;
+        if (d.perfect && isActuallyPerfect) {
           say('PUISSANCE PARFAITE', '#0f8', 55, !FIN ? '+25 PTS BONUS' : 'TRAJECTOIRE OPTIMALE');
           if (!FIN && PL[cp]) PL[cp].bonus += 25;
         }
       }
     } else if (d.type === 'roll_sync') {
-      if (!isMyNetTurn() && st === 'roll' && ball && ball.rolling) {
-        ball.x = d.bx;
-        ball.y = d.by;
-        ball.vx = d.vx;
-        ball.vy = d.vy;
-        ball.spin = d.spin;
+      if (!isMyNetTurn() && st === 'roll' && ball && ball.rolling && validateNetPacket(d)) {
+        // Lissage anti-téléportation : limite les écarts brusques
+        const maxJump = 48;
+        if (Math.hypot(d.bx - ball.x, d.by - ball.y) < maxJump) {
+          ball.x = clamp(d.bx, LL - 24, LR + 24);
+          ball.y = clamp(d.by, 20, 745);
+          ball.vx = clamp(d.vx, -18, 18);
+          ball.vy = clamp(d.vy, -18, 4);
+          ball.spin = clamp(d.spin, -1, 1);
+        }
       }
     } else if (d.type === 'throw_res') {
-      if (!isMyNetTurn()) {
+      if (!isMyNetTurn() && validateNetPacket(d)) {
+        netSec.turnResSeen = true;
         if (st === 'roll') {
           endThrow(d);
         } else if (st === 'between') {
           pins.forEach((p, idx) => {
             if (d.pins && d.pins[idx]) {
-              p.down = d.pins[idx].down;
-              p.gone = d.pins[idx].gone;
+              p.down = !!d.pins[idx].down;
+              p.gone = !!d.pins[idx].gone;
             }
           });
         }
       }
     } else if (d.type === 'rematch') {
-      startGame(true);
+      if (netRole === 'guest') {
+        startGame(true);
+      }
     }
   }
 
@@ -1182,6 +1317,7 @@
     settleT = 0;
     netSyncTimer = 0;
     swipeMode = false;
+    resetNetTurnSecurity();
     newBall();
     if (isBotTurn() && (playType !== 'online' || netRole === 'host')) {
       planBotShot();
