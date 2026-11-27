@@ -766,81 +766,94 @@
     }
   }
 
+  // Renvoie :
+  //   true  = paquet accepté
+  //   false = paquet invalide / malveillant (compte comme avertissement, 3 = exclusion)
+  //   null  = paquet ignoré SANS sanction (arrivé en retard ou dans le désordre :
+  //           le canal PeerJS n'est pas ordonné par défaut, ça arrive à des joueurs honnêtes)
   function validateNetPacket(d, senderPeerId = null) {
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return false;
 
     if (netRole === 'host' && senderPeerId) {
+      // Un invité ne peut envoyer QUE ces types. start / lobby_state / full / kicked
+      // sont réservés au host (sinon un invité pourrait fermer la salle de tout le monde).
+      if (!['hello', 'rematch', 'aim', 'launch', 'roll_sync', 'throw_res'].includes(d.type)) return false;
+
       const slotEntry = roomRoster.find(r => r.peerId === senderPeerId);
-      if (!slotEntry) return false;
-      const senderSlot = slotEntry.slot;
+      if (!slotEntry) return null;
 
       if (d.type === 'hello') {
-        return st === 'online' && onlineSub === 'hosting' && typeof d.nick === 'string';
-      }
-      if (['aim', 'launch', 'roll_sync', 'throw_res'].includes(d.type)) {
-        if (senderSlot !== cp || isBotTurn()) return false;
+        return (st === 'online' && onlineSub === 'hosting' && typeof d.nick === 'string') ? true : null;
       }
       if (d.type === 'rematch') {
-        return false;
+        return st === 'over' ? true : null;
       }
+      // ce n'est pas son tour (ou tour d'un bot) : on ignore
+      if (slotEntry.slot !== cp || isBotTurn()) return null;
     }
 
     if (d.type === 'aim') {
-      if (st !== 'aim') return false;
       if (!Number.isFinite(d.px) || !Number.isFinite(d.aimA) || !Number.isFinite(d.power)) return false;
       if (d.px < LL + BR || d.px > LR - BR) return false;
       if (Math.abs(d.aimA) > 0.45) return false;
       if (d.power < 0 || d.power > 1.02) return false;
       if (d.aimLock !== 0 && d.aimLock !== 1) return false;
-      return true;
+      return st === 'aim' ? true : null;
     }
 
     if (d.type === 'launch') {
-      if (st !== 'aim' || netSec.turnLaunchSeen) return false;
       if (!Number.isFinite(d.px) || !Number.isFinite(d.vx) || !Number.isFinite(d.vy)) return false;
       if (!Number.isFinite(d.aimA) || !Number.isFinite(d.power)) return false;
       if (d.px < LL + BR || d.px > LR - BR) return false;
       if (Math.abs(d.aimA) > 0.45) return false;
       if (d.power < 0 || d.power > 1.01) return false;
-
       const expectedSpeed = 7.2 + clamp(d.power, 0, 1) * 9.2;
       const actualSpeed = Math.hypot(d.vx, d.vy);
       if (Math.abs(actualSpeed - expectedSpeed) > 0.35 || d.vy >= -5.5) return false;
       if (Math.abs(d.spin || 0) > 1.05) return false;
-      return true;
+      return (st === 'aim' && !netSec.turnLaunchSeen) ? true : null;
     }
 
     if (d.type === 'roll_sync') {
-      if (st !== 'roll' || !netSec.turnLaunchSeen) return false;
+      if (st !== 'roll' || !netSec.turnLaunchSeen) return null;
       if (!Number.isFinite(d.bx) || !Number.isFinite(d.by) || !Number.isFinite(d.vx) || !Number.isFinite(d.vy)) return false;
-      if (d.bx < 20 || d.bx > 460 || d.by < 0 || d.by > 760) return false;
-      if (Math.hypot(d.vx, d.vy) > 19.5) return false;
-      if (Math.abs(d.spin || 0) > 1.05) return false;
+      // roll_sync ne sert qu'à recaler la boule : une valeur hors limites est simplement ignorée
+      if (d.bx < 20 || d.bx > 460 || d.by < 0 || d.by > 760) return null;
+      if (Math.hypot(d.vx, d.vy) > 19.5) return null;
+      if (Math.abs(d.spin || 0) > 1.05) return null;
       return true;
     }
 
     if (d.type === 'throw_res') {
-      if ((st !== 'roll' && st !== 'between') || netSec.turnResSeen) return false;
-      if (!Array.isArray(d.pins) || d.pins.length !== pins.length) return false;
-
-      let newDownCount = 0;
-      for (let i = 0; i < pins.length; i++) {
-        const cur = pins[i];
-        const inc = d.pins[i];
-        if (!inc || typeof inc !== 'object') return false;
-        const incDown = !!inc.down;
-        const incGone = !!inc.gone;
-        // Une quille deja tombée/retirée ne peut pas ressurgir pendant un lancer
-        if (cur.gone && !incGone) return false;
-        if (cur.down && !incDown && !incGone) return false;
-        if (incDown && !cur.gone) newDownCount++;
+      if (!Array.isArray(d.pins) || d.pins.length > 20) return false;
+      for (let i = 0; i < d.pins.length; i++) {
+        if (!d.pins[i] || typeof d.pins[i] !== 'object') return false;
       }
-      if (newDownCount > sb || newDownCount < 0 || newDownCount > 10) return false;
-      if (d.gutter && newDownCount > 0) return false;
-      return true;
+      if (pins.length && d.pins.length !== pins.length) return false;
+      // NB : on ne compare PAS avec l'état local des quilles : chaque client simule la
+      // boule de son côté, donc l'état local peut légitimement différer du résultat du lanceur.
+      return ((st === 'roll' || st === 'between') && !netSec.turnResSeen) ? true : null;
     }
 
     return ['full', 'kicked', 'lobby_state', 'start', 'rematch'].includes(d.type);
+  }
+
+  // Reconstruit un message propre (champs connus uniquement) avant de le relayer aux autres joueurs
+  function cleanGameMsg(d) {
+    switch (d.type) {
+      case 'aim':
+        return { type: 'aim', px: d.px, aimLock: d.aimLock, aimA: d.aimA, power: d.power };
+      case 'launch':
+        return { type: 'launch', px: d.px, vx: d.vx, vy: d.vy, spin: Number(d.spin) || 0, aimA: d.aimA, power: d.power, perfect: !!d.perfect };
+      case 'roll_sync':
+        return { type: 'roll_sync', bx: d.bx, by: d.by, vx: d.vx, vy: d.vy, spin: Number(d.spin) || 0 };
+      case 'throw_res':
+        return { type: 'throw_res', gutter: !!d.gutter, pins: d.pins.map(q => ({ down: !!q.down, gone: !!q.gone })) };
+      case 'rematch':
+        return { type: 'rematch' };
+      default:
+        return d;
+    }
   }
 
   function netBroadcastFromHost(data, excludeConn = null) {
@@ -970,20 +983,23 @@
       if (d.type !== 'throw_res' && d.type !== 'launch' && now - lastT < 16) return;
       netSec.lastMsgByPeer.set(c.peer, now);
 
-      if (!validateNetPacket(d, c.peer)) {
-        flagNetCheater(c, 'PAQUET SUSPECT BLOQUE');
+      const verdict = validateNetPacket(d, c.peer);
+      if (!verdict) {
+        // false = triche / paquet malformé -> avertissement ; null = simplement ignoré
+        if (verdict === false) flagNetCheater(c, 'PAQUET SUSPECT BLOQUE');
         return;
       }
 
       if (d.type === 'hello') {
         const item = roomRoster.find(r => r.peerId === c.peer);
         if (item && d.nick) {
-          item.nick = sanitizeNick(d.nick, 'JOUEUR');
+          item.nick = sanitizeNick(String(d.nick).slice(0, 64), 'JOUEUR');
           syncLobbyRoster();
         }
       } else {
-        netBroadcastFromHost(d, c);
-        handleNetData(d);
+        const msg = cleanGameMsg(d);
+        netBroadcastFromHost(msg, c);
+        handleNetData(msg);
       }
     });
 
@@ -1125,7 +1141,8 @@
         }
       }
     } else if (d.type === 'rematch') {
-      if (netRole === 'guest') {
+      // invité : le host a lancé la revanche ; host : un invité la propose (déjà vérifié sur l'écran de fin)
+      if (netRole === 'guest' || st === 'over') {
         startGame(true);
       }
     }
