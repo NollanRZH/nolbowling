@@ -108,8 +108,11 @@
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 4
     }
   };
 
@@ -522,13 +525,13 @@
           mode
         });
       }
-    }, 8000);
+    }, 5000);
 
     setInterval(() => {
       if (st === 'menu' || st === 'online') {
         syncFirebaseLobby();
       }
-    }, 1800);
+    }, 1000);
 
     window.addEventListener('beforeunload', () => {
       if (netRole === 'host' && roomCode) {
@@ -805,7 +808,7 @@
 
       const expectedSpeed = 7.2 + clamp(d.power, 0, 1) * 9.2;
       const actualSpeed = Math.hypot(d.vx, d.vy);
-      if (Math.abs(actualSpeed - expectedSpeed) > 0.35 || d.vy >= -5.5) return false;
+      if (Math.abs(actualSpeed - expectedSpeed) > 0.45 || d.vy >= -5.2) return false;
       if (Math.abs(d.spin || 0) > 1.05) return false;
       return true;
     }
@@ -830,7 +833,6 @@
         if (!inc || typeof inc !== 'object') return false;
         const incDown = !!inc.down;
         const incGone = !!inc.gone;
-        // Une quille deja tombée/retirée ne peut pas ressurgir pendant un lancer
         if (cur.gone && !incGone) return false;
         if (cur.down && !incDown && !incGone) return false;
         if (incDown && !cur.gone) newDownCount++;
@@ -841,6 +843,49 @@
     }
 
     return ['full', 'kicked', 'lobby_state', 'start', 'rematch'].includes(d.type);
+  }
+
+  function cleanGameMsg(d) {
+    if (!d || typeof d !== 'object') return d;
+    if (d.type === 'aim') {
+      return {
+        type: 'aim',
+        px: clamp(Number(d.px) || 240, LL + BR + 4, LR - BR - 4),
+        aimLock: d.aimLock ? 1 : 0,
+        aimA: clamp(Number(d.aimA) || 0, -0.42, 0.42),
+        power: clamp(Number(d.power) || 0, 0, 1)
+      };
+    }
+    if (d.type === 'launch') {
+      return {
+        type: 'launch',
+        px: clamp(Number(d.px) || 240, LL + BR + 4, LR - BR - 4),
+        vx: Number(d.vx) || 0,
+        vy: Number(d.vy) || -8,
+        spin: clamp(Number(d.spin) || 0, -1, 1),
+        aimA: clamp(Number(d.aimA) || 0, -0.42, 0.42),
+        power: clamp(Number(d.power) || 0, 0, 1),
+        perfect: !!d.perfect
+      };
+    }
+    if (d.type === 'roll_sync') {
+      return {
+        type: 'roll_sync',
+        bx: clamp(Number(d.bx) || 240, LL - 24, LR + 24),
+        by: clamp(Number(d.by) || 400, 20, 745),
+        vx: clamp(Number(d.vx) || 0, -18, 18),
+        vy: clamp(Number(d.vy) || -8, -18, 4),
+        spin: clamp(Number(d.spin) || 0, -1, 1)
+      };
+    }
+    if (d.type === 'throw_res') {
+      return {
+        type: 'throw_res',
+        gutter: !!d.gutter,
+        pins: Array.isArray(d.pins) ? d.pins.map(p => ({ down: !!p.down, gone: !!p.gone })) : []
+      };
+    }
+    return d;
   }
 
   function netBroadcastFromHost(data, excludeConn = null) {
@@ -1016,14 +1061,26 @@
 
   function setupGuestConn(connection) {
     guestConn = connection;
+    const connTimeout = setTimeout(() => {
+      if (playType === 'online' && st === 'online' && (!guestConn || !guestConn.open)) {
+        netStatus = 'DELAI DEPASSE - REESSAIE';
+        tone(150, 0.2, 'sawtooth');
+      }
+    }, 6500);
+
     guestConn.on('open', () => {
+      clearTimeout(connTimeout);
       netStatus = 'CONNECTE AU SALON !';
       arp([523.25, 659.25, 783.99], 60);
       haptic([20, 40, 20]);
       netSend({ type: 'hello', nick: myNick, skin: stats.skin });
     });
-    guestConn.on('data', d => handleNetData(d));
+    guestConn.on('data', d => {
+      if (netRole === 'guest' && !validateNetPacket(d)) return;
+      handleNetData(d);
+    });
     guestConn.on('close', () => {
+      clearTimeout(connTimeout);
       if (playType === 'online' && st !== 'menu' && st !== 'over') {
         say('HOTE DECONNECTE', '#f35', 140, 'RETOUR AU MENU');
         if (!disconnectReturnTimer) {
@@ -1037,6 +1094,7 @@
       netStatus = 'CONNEXION FERMEE';
     });
     guestConn.on('error', () => {
+      clearTimeout(connTimeout);
       netStatus = 'SALON INTROUVABLE';
     });
   }
@@ -1926,9 +1984,9 @@
         ball.rot += Math.hypot(ball.vx, ball.vy) * 0.045;
       }
 
-      if (playType === 'online' && isMyNetTurn() && ball.rolling) {
+      if (playType === 'online' && isMyNetTurn()) {
         netSyncTimer++;
-        if (netSyncTimer % 3 === 0) {
+        if (netSyncTimer % 2 === 0) {
           netSend({
             type: 'roll_sync',
             bx: ball.x,
