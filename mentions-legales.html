@@ -101,6 +101,15 @@
     color: #ffff00;
   }
 
+  .L { display: none; }
+  html:not([data-lang]) .L.fr, html[data-lang="fr"] .L.fr, html[data-lang="en"] .L.en, html[data-lang="es"] .L.es { display: block; }
+  .langs { display: flex; gap: 8px; }
+  .langs button {
+    font-family: inherit; font-size: clamp(9px, 1.2vw, 12px); cursor: pointer;
+    background: transparent; color: #ff00ff; border: 2px solid #ff00ff; border-radius: 8px; padding: 9px 12px;
+  }
+  .langs button.on { background: #ff00ff; color: #05010f; }
+
   @media (max-width: 480px) {
     .btn-back {
       width: 100%;
@@ -112,10 +121,12 @@
 <body>
   <div class="page">
     <div class="top-bar">
-      <a class="btn-back" href="index.html">&lt; RETOUR AU JEU</a>
+      <a class="btn-back" id="back" href="index.html">&lt; RETOUR AU JEU</a>
+      <div class="langs"><button data-l="fr">FR</button><button data-l="en">EN</button><button data-l="es">MX</button></div>
     </div>
 
     <div class="card">
+      <div class="L fr">
       <h1>MENTIONS LEGALES</h1>
       <p class="subtitle">NOLBOWLING - ARCADE EDITION</p>
 
@@ -124,39 +135,176 @@
       <p>Contact : <a href="mailto:contact.nollan@gmail.com">contact.nollan@gmail.com</a></p>
 
       <h2>2. HEBERGEMENT</h2>
-      <p>Le site est heberge via <strong>GitHub Pages</strong>, service fourni par GitHub, Inc. (88 Colin P. Kelly Jr. St, San Francisco, CA 94107, Etats-Unis).</p>
+      <p>Le site est heberge via <strong>GitHub Pages</strong>, service fourni par GitHub, Inc. (88 Colin P. Kelly Jr. St, San Francisco, CA 94107, Etats-Unis). Comme tout hebergeur, GitHub peut enregistrer des journaux techniques de connexion (dont l'adresse IP) lors de la consultation du site.</p>
 
-      <h2>3. DONNEES LOCALES ET MULTIJOUEUR</h2>
-      <p><strong>Stockage local :</strong> vos statistiques de jeu, scores, boule selectionnee et pseudo sont enregistres localement dans votre navigateur (<code>localStorage</code>). Ces donnees restent sur votre appareil et vous pouvez les effacer a tout moment en videant les donnees du site dans votre navigateur.</p>
-      <p><strong>Mode en ligne :</strong> le compteur de joueurs actifs et la liste des salons publics utilisent Firebase Realtime Database (Google LLC), et les connexions multijoueur temps reel passent par PeerJS (WebRTC).</p>
-      <p>Les connexions WebRTC sont directes entre joueurs : votre adresse IP peut donc etre visible de l'autre joueur pendant une partie, et elle transite brievement par le serveur de signalisation de PeerJS pour etablir la connexion. Votre pseudo peut etre affiche aux autres joueurs dans les salons.</p>
+      <h2>3. DONNEES STOCKEES SUR VOTRE APPAREIL</h2>
+      <p>Le jeu enregistre dans votre navigateur (<code>localStorage</code>) : vos statistiques et scores, la boule selectionnee, votre pseudo, la langue choisie (FR / EN / MX) et un identifiant de connexion anonyme pour le mode en ligne (voir article 4). Ces donnees restent sur votre appareil et vous pouvez les effacer a tout moment en videant les donnees du site dans votre navigateur.</p>
+
+      <h2>4. MODE EN LIGNE ET DONNEES PARTAGEES</h2>
+      <p><strong>Connexion anonyme :</strong> pour creer ou rejoindre des salons, le jeu vous connecte automatiquement a <strong>Firebase Authentication</strong> (Google LLC) de facon <strong>anonyme</strong> : aucun e-mail, mot de passe ni compte n'est demande. Un identifiant technique aleatoire est cree et son jeton est conserve dans votre navigateur. Il sert uniquement a ce que vous ne puissiez modifier que votre propre salon.</p>
+      <p><strong>Donnees publiques :</strong> la liste des salons et le compteur de joueurs en ligne utilisent <strong>Firebase Realtime Database</strong> (Google LLC, donnees hebergees en Europe de l'Ouest). Y figurent, de facon visible par les autres joueurs : votre pseudo, le code et les reglages du salon que vous creez (mode, nombre de joueurs) et un horodatage de presence. N'utilisez donc pas votre vrai nom ni d'information personnelle comme pseudo.</p>
+      <p><strong>Parties :</strong> les echanges en temps reel pendant une partie passent par <strong>PeerJS</strong> (WebRTC), directement entre joueurs. Votre adresse IP peut donc etre visible de l'autre joueur pendant la partie. Elle transite aussi par le serveur de signalisation de PeerJS et par des serveurs STUN de Google (<code>stun.l.google.com</code>) afin d'etablir la connexion.</p>
       <p>Aucune vente de donnees personnelles n'est effectuee.</p>
 
-      <h2>4. MESURE D'AUDIENCE (GOATCOUNTER)</h2>
+      <h2>5. DUREE DE CONSERVATION</h2>
+      <p>Les salons et les informations de presence sont temporaires : ils sont supprimes lorsque vous quittez la partie ou le menu en ligne, ou nettoyes automatiquement une fois inactifs (en principe en moins d'une minute). L'identifiant anonyme reste dans votre navigateur tant que vous ne videz pas les donnees du site ; en le supprimant, un nouvel identifiant sera cree a la prochaine connexion.</p>
+
+      <h2>6. FAIR-PLAY ET EXCLUSION</h2>
+      <p>En mode en ligne, le jeu verifie les messages echanges entre joueurs. Un joueur dont le navigateur envoie des donnees invalides de facon repetee peut etre automatiquement exclu de la partie. Cette verification est technique et ne conserve aucune donnee sur la personne exclue.</p>
+
+      <h2>7. MESURE D'AUDIENCE (GOATCOUNTER)</h2>
       <p>Ce site utilise <strong>GoatCounter</strong> (<a href="https://www.goatcounter.com" target="_blank" rel="noopener">goatcounter.com</a>), un outil de statistiques de frequentation respectueux de la vie privee, afin de savoir combien de personnes visitent le jeu.</p>
       <p><strong>Ce qui est mesure :</strong> la page visitee, la provenance de la visite (site referent), le type de navigateur et de systeme, la taille de l'ecran et le pays approximatif.</p>
       <p><strong>Ce qui n'est pas fait :</strong> aucun cookie n'est depose, votre adresse IP n'est pas conservee, aucun profil n'est constitue et vous n'etes pas suivi d'un site a l'autre. Les statistiques sont anonymes et ne servent qu'a l'amelioration du jeu.</p>
       <p>Si vous ne souhaitez pas etre comptabilise, vous pouvez utiliser un bloqueur de publicites ou de traceurs : le jeu fonctionnera normalement.</p>
 
-      <h2>5. COOKIES</h2>
-      <p>NolBowling ne depose <strong>aucun cookie</strong> de suivi, de publicite ou d'analyse. Seul le stockage local decrit a l'article 3 est utilise, uniquement pour le fonctionnement du jeu (sauvegarde de vos scores et reglages).</p>
+      <h2>8. COOKIES</h2>
+      <p>NolBowling ne depose <strong>aucun cookie</strong> de suivi, de publicite ou d'analyse. Seul le stockage local decrit a l'article 3 est utilise, uniquement pour le fonctionnement du jeu (sauvegarde de vos scores et reglages, connexion au mode en ligne).</p>
 
-      <h2>6. SERVICES TIERS</h2>
-      <p>Pour fonctionner, le site charge des ressources externes : la police <strong>Press Start 2P</strong> via Google Fonts (Google LLC), la bibliotheque <strong>PeerJS</strong> via le CDN unpkg, ainsi que les services Firebase et GoatCounter cites plus haut. Lors du chargement, ces services peuvent recevoir votre adresse IP et des informations techniques de votre navigateur. Certains de ces prestataires sont situes hors de l'Union europeenne, notamment aux Etats-Unis.</p>
+      <h2>9. SERVICES TIERS</h2>
+      <p>Pour fonctionner, le site charge ou contacte des services externes : la police <strong>Press Start 2P</strong> via Google Fonts, la bibliotheque <strong>PeerJS</strong> via le CDN unpkg, <strong>Firebase</strong> (Authentication et Realtime Database), les serveurs STUN de Google, <strong>GoatCounter</strong> et <strong>GitHub Pages</strong>. Lors du chargement, ces services peuvent recevoir votre adresse IP et des informations techniques de votre navigateur. Certains de ces prestataires sont situes hors de l'Union europeenne, notamment aux Etats-Unis.</p>
 
-      <h2>7. VOS DROITS (RGPD)</h2>
+      <h2>10. VOS DROITS (RGPD)</h2>
       <p>Conformement au Reglement General sur la Protection des Donnees et a la loi Informatique et Libertes, vous disposez d'un droit d'acces, de rectification, d'effacement, d'opposition et de limitation concernant les donnees vous concernant.</p>
       <p>Pour exercer vos droits ou poser une question : <a href="mailto:contact.nollan@gmail.com">contact.nollan@gmail.com</a>. En cas de difficulte, vous pouvez egalement saisir la CNIL : <a href="https://www.cnil.fr" target="_blank" rel="noopener">cnil.fr</a>.</p>
 
-      <h2>8. PROPRIETE INTELLECTUELLE</h2>
+      <h2>11. PROPRIETE INTELLECTUELLE</h2>
       <p>Le code, l'interface arcade et les elements graphiques propres a NolBowling restent la propriete de leur auteur, sauf mention contraire ou ressources tierces (polices, librairies techniques). Toute reproduction sans autorisation est interdite.</p>
 
-      <h2>9. RESPONSABILITE</h2>
+      <h2>12. RESPONSABILITE</h2>
       <p>NolBowling est un jeu gratuit propose sans garantie de disponibilite continue. L'editeur ne saurait etre tenu responsable d'une interruption du service, d'une perte de scores stockes localement, ni du comportement des autres joueurs en mode multijoueur.</p>
 
-      <h2>10. MISE A JOUR</h2>
-      <p>Ces mentions legales peuvent etre modifiees a tout moment. Derniere mise a jour : 25 novembre 2026.</p>
+      <h2>13. MISE A JOUR</h2>
+      <p>Ces mentions legales peuvent etre modifiees a tout moment. Derniere mise a jour : 27 novembre 2026.</p>
+      </div>
+      <div class="L en">
+      <h1>LEGAL NOTICE</h1>
+      <p class="subtitle">NOLBOWLING - ARCADE EDITION</p>
+
+      <h2>1. SITE PUBLISHER</h2>
+      <p>The game <strong>NolBowling</strong> is published on a personal / independent basis by <strong>Nollan</strong>, who is also the publication director.</p>
+      <p>Contact: <a href="mailto:contact.nollan@gmail.com">contact.nollan@gmail.com</a></p>
+
+      <h2>2. HOSTING</h2>
+      <p>The site is hosted via <strong>GitHub Pages</strong>, a service provided by GitHub, Inc. (88 Colin P. Kelly Jr. St, San Francisco, CA 94107, USA). Like any host, GitHub may keep technical connection logs (including IP addresses) when the site is visited.</p>
+
+      <h2>3. DATA STORED ON YOUR DEVICE</h2>
+      <p>The game saves in your browser (<code>localStorage</code>): your stats and scores, the selected ball, your nickname, the chosen language (FR / EN / MX) and an anonymous login identifier for online mode (see section 4). This data stays on your device and you can erase it at any time by clearing the site data in your browser.</p>
+
+      <h2>4. ONLINE MODE AND SHARED DATA</h2>
+      <p><strong>Anonymous login:</strong> to create or join rooms, the game automatically signs you in to <strong>Firebase Authentication</strong> (Google LLC) <strong>anonymously</strong>: no e-mail, password or account is required. A random technical identifier is created and its token is kept in your browser. It is only used so that you can modify your own room and nobody else's.</p>
+      <p><strong>Public data:</strong> the room list and the online player counter use <strong>Firebase Realtime Database</strong> (Google LLC, data hosted in Western Europe). The following is visible to other players: your nickname, the code and settings of the room you create (mode, number of players) and a presence timestamp. Do not use your real name or any personal information as a nickname.</p>
+      <p><strong>Matches:</strong> real-time exchanges during a match go through <strong>PeerJS</strong> (WebRTC), directly between players. Your IP address may therefore be visible to the other player during the match. It also passes through the PeerJS signaling server and Google STUN servers (<code>stun.l.google.com</code>) to establish the connection.</p>
+      <p>No personal data is sold.</p>
+
+      <h2>5. RETENTION PERIOD</h2>
+      <p>Rooms and presence information are temporary: they are deleted when you leave the match or the online menu, or automatically cleaned up once inactive (normally within a minute). The anonymous identifier stays in your browser until you clear the site data; if you delete it, a new one is created at your next connection.</p>
+
+      <h2>6. FAIR PLAY AND EXCLUSION</h2>
+      <p>In online mode, the game checks the messages exchanged between players. A player whose browser repeatedly sends invalid data may be automatically excluded from the match. This check is technical and no data about the excluded person is kept.</p>
+
+      <h2>7. AUDIENCE MEASUREMENT (GOATCOUNTER)</h2>
+      <p>This site uses <strong>GoatCounter</strong> (<a href="https://www.goatcounter.com" target="_blank" rel="noopener">goatcounter.com</a>), a privacy-friendly traffic statistics tool, to know how many people visit the game.</p>
+      <p><strong>What is measured:</strong> the page visited, where the visit came from (referrer), the type of browser and system, the screen size and the approximate country.</p>
+      <p><strong>What is not done:</strong> no cookie is set, your IP address is not kept, no profile is built and you are not tracked from one site to another. Statistics are anonymous and only used to improve the game.</p>
+      <p>If you do not wish to be counted, you can use an ad or tracker blocker: the game will work normally.</p>
+
+      <h2>8. COOKIES</h2>
+      <p>NolBowling sets <strong>no cookie</strong> for tracking, advertising or analytics. Only the local storage described in section 3 is used, solely for the game to work (saving your scores and settings, online mode login).</p>
+
+      <h2>9. THIRD-PARTY SERVICES</h2>
+      <p>To work, the site loads or contacts external services: the <strong>Press Start 2P</strong> font via Google Fonts, the <strong>PeerJS</strong> library via the unpkg CDN, <strong>Firebase</strong> (Authentication and Realtime Database), Google STUN servers, <strong>GoatCounter</strong> and <strong>GitHub Pages</strong>. When loading, these services may receive your IP address and technical information from your browser. Some of these providers are located outside the European Union, notably in the United States.</p>
+
+      <h2>10. YOUR RIGHTS (GDPR)</h2>
+      <p>In accordance with the General Data Protection Regulation and French data protection law, you have the right of access, rectification, erasure, objection and restriction regarding data concerning you.</p>
+      <p>To exercise your rights or ask a question: <a href="mailto:contact.nollan@gmail.com">contact.nollan@gmail.com</a>. In case of difficulty, you may also contact the CNIL (French data protection authority): <a href="https://www.cnil.fr" target="_blank" rel="noopener">cnil.fr</a>.</p>
+
+      <h2>11. INTELLECTUAL PROPERTY</h2>
+      <p>The code, the arcade interface and the graphic elements specific to NolBowling remain the property of their author, unless otherwise stated or for third-party resources (fonts, technical libraries). Any reproduction without permission is prohibited.</p>
+
+      <h2>12. LIABILITY</h2>
+      <p>NolBowling is a free game provided without any guarantee of continuous availability. The publisher cannot be held responsible for a service interruption, for the loss of locally stored scores, or for the behavior of other players in multiplayer mode.</p>
+
+      <h2>13. UPDATES</h2>
+      <p>This legal notice may be modified at any time. Last updated: November 27, 2026.</p>
+      </div>
+      <div class="L es">
+      <h1>AVISO LEGAL</h1>
+      <p class="subtitle">NOLBOWLING - EDICION ARCADE</p>
+
+      <h2>1. EDITOR DEL SITIO</h2>
+      <p>El juego <strong>NolBowling</strong> es publicado a titulo personal / independiente por <strong>Nollan</strong>, quien es tambien el director de la publicacion.</p>
+      <p>Contacto: <a href="mailto:contact.nollan@gmail.com">contact.nollan@gmail.com</a></p>
+
+      <h2>2. ALOJAMIENTO</h2>
+      <p>El sitio esta alojado en <strong>GitHub Pages</strong>, servicio de GitHub, Inc. (88 Colin P. Kelly Jr. St, San Francisco, CA 94107, Estados Unidos). Como cualquier proveedor de alojamiento, GitHub puede guardar registros tecnicos de conexion (incluida la direccion IP) cuando se visita el sitio.</p>
+
+      <h2>3. DATOS GUARDADOS EN TU DISPOSITIVO</h2>
+      <p>El juego guarda en tu navegador (<code>localStorage</code>): tus estadisticas y puntajes, la bola seleccionada, tu apodo, el idioma elegido (FR / EN / MX) y un identificador de conexion anonimo para el modo en linea (ver articulo 4). Estos datos se quedan en tu dispositivo y puedes borrarlos cuando quieras limpiando los datos del sitio en tu navegador.</p>
+
+      <h2>4. MODO EN LINEA Y DATOS COMPARTIDOS</h2>
+      <p><strong>Conexion anonima:</strong> para crear o unirte a salas, el juego te conecta automaticamente a <strong>Firebase Authentication</strong> (Google LLC) de forma <strong>anonima</strong>: no se pide correo, contrasena ni cuenta. Se crea un identificador tecnico aleatorio y su token se guarda en tu navegador. Solo sirve para que puedas modificar unicamente tu propia sala.</p>
+      <p><strong>Datos publicos:</strong> la lista de salas y el contador de jugadores en linea usan <strong>Firebase Realtime Database</strong> (Google LLC, datos alojados en Europa Occidental). Los demas jugadores pueden ver: tu apodo, el codigo y la configuracion de la sala que creas (modo, numero de jugadores) y una marca de tiempo de presencia. Por eso, no uses tu nombre real ni informacion personal como apodo.</p>
+      <p><strong>Partidas:</strong> los intercambios en tiempo real durante una partida pasan por <strong>PeerJS</strong> (WebRTC), directamente entre jugadores. Por lo tanto, tu direccion IP puede ser visible para el otro jugador durante la partida. Tambien pasa por el servidor de senalizacion de PeerJS y por servidores STUN de Google (<code>stun.l.google.com</code>) para establecer la conexion.</p>
+      <p>No se vende ningun dato personal.</p>
+
+      <h2>5. PLAZO DE CONSERVACION</h2>
+      <p>Las salas y la informacion de presencia son temporales: se eliminan cuando sales de la partida o del menu en linea, o se limpian automaticamente cuando quedan inactivas (en principio en menos de un minuto). El identificador anonimo permanece en tu navegador mientras no borres los datos del sitio; si lo eliminas, se crea uno nuevo en tu proxima conexion.</p>
+
+      <h2>6. JUEGO LIMPIO Y EXPULSION</h2>
+      <p>En el modo en linea, el juego verifica los mensajes que se intercambian los jugadores. Un jugador cuyo navegador envie datos invalidos de forma repetida puede ser expulsado automaticamente de la partida. Esta verificacion es tecnica y no se conserva ningun dato de la persona expulsada.</p>
+
+      <h2>7. MEDICION DE AUDIENCIA (GOATCOUNTER)</h2>
+      <p>Este sitio usa <strong>GoatCounter</strong> (<a href="https://www.goatcounter.com" target="_blank" rel="noopener">goatcounter.com</a>), una herramienta de estadisticas de visitas respetuosa con la privacidad, para saber cuantas personas visitan el juego.</p>
+      <p><strong>Lo que se mide:</strong> la pagina visitada, la procedencia de la visita (sitio de referencia), el tipo de navegador y de sistema, el tamano de la pantalla y el pais aproximado.</p>
+      <p><strong>Lo que no se hace:</strong> no se instala ninguna cookie, tu direccion IP no se conserva, no se crea ningun perfil y no se te rastrea de un sitio a otro. Las estadisticas son anonimas y solo sirven para mejorar el juego.</p>
+      <p>Si no quieres ser contabilizado, puedes usar un bloqueador de anuncios o de rastreadores: el juego funcionara normalmente.</p>
+
+      <h2>8. COOKIES</h2>
+      <p>NolBowling <strong>no instala ninguna cookie</strong> de seguimiento, publicidad o analisis. Solo se usa el almacenamiento local descrito en el articulo 3, unicamente para el funcionamiento del juego (guardar tus puntajes y ajustes, conexion al modo en linea).</p>
+
+      <h2>9. SERVICIOS DE TERCEROS</h2>
+      <p>Para funcionar, el sitio carga o contacta servicios externos: la fuente <strong>Press Start 2P</strong> mediante Google Fonts, la biblioteca <strong>PeerJS</strong> mediante el CDN unpkg, <strong>Firebase</strong> (Authentication y Realtime Database), los servidores STUN de Google, <strong>GoatCounter</strong> y <strong>GitHub Pages</strong>. Al cargarse, estos servicios pueden recibir tu direccion IP e informacion tecnica de tu navegador. Algunos de estos proveedores estan ubicados fuera de la Union Europea, en particular en Estados Unidos.</p>
+
+      <h2>10. TUS DERECHOS (RGPD)</h2>
+      <p>De conformidad con el Reglamento General de Proteccion de Datos y la ley francesa de proteccion de datos, tienes derecho de acceso, rectificacion, supresion, oposicion y limitacion respecto a los datos que te conciernen.</p>
+      <p>Para ejercer tus derechos o hacer una pregunta: <a href="mailto:contact.nollan@gmail.com">contact.nollan@gmail.com</a>. En caso de dificultad, tambien puedes acudir a la CNIL (autoridad francesa de proteccion de datos): <a href="https://www.cnil.fr" target="_blank" rel="noopener">cnil.fr</a>.</p>
+
+      <h2>11. PROPIEDAD INTELECTUAL</h2>
+      <p>El codigo, la interfaz arcade y los elementos graficos propios de NolBowling siguen siendo propiedad de su autor, salvo mencion en contrario o recursos de terceros (fuentes, bibliotecas tecnicas). Queda prohibida cualquier reproduccion sin autorizacion.</p>
+
+      <h2>12. RESPONSABILIDAD</h2>
+      <p>NolBowling es un juego gratuito que se ofrece sin garantia de disponibilidad continua. El editor no puede ser responsable de una interrupcion del servicio, de la perdida de puntajes guardados localmente, ni del comportamiento de otros jugadores en el modo multijugador.</p>
+
+      <h2>13. ACTUALIZACION</h2>
+      <p>Este aviso legal puede modificarse en cualquier momento. Ultima actualizacion: 27 de noviembre de 2026.</p>
+      </div>
     </div>
   </div>
+<script>
+(function () {
+  var L = ['fr', 'en', 'es'], cur = 'fr';
+  var BACK = { fr: '< RETOUR AU JEU', en: '< BACK TO GAME', es: '< VOLVER AL JUEGO' };
+  var TITLE = { fr: 'Mentions legales - NolBowling', en: 'Legal notice - NolBowling', es: 'Aviso legal - NolBowling' };
+  try {
+    var sv = localStorage.getItem('nb_lang');
+    if (L.indexOf(sv) > -1) cur = sv;
+    else { var n = (navigator.language || 'fr').toLowerCase(); cur = n.indexOf('es') === 0 ? 'es' : n.indexOf('en') === 0 ? 'en' : 'fr'; }
+  } catch (e) {}
+  function set(l, save) {
+    cur = l;
+    document.documentElement.setAttribute('data-lang', l);
+    document.documentElement.lang = l === 'es' ? 'es-MX' : l;
+    document.title = TITLE[l];
+    document.getElementById('back').textContent = BACK[l];
+    var bs = document.querySelectorAll('.langs button');
+    for (var i = 0; i < bs.length; i++) bs[i].className = bs[i].getAttribute('data-l') === l ? 'on' : '';
+    if (save) { try { localStorage.setItem('nb_lang', l); } catch (e) {} }
+  }
+  var bs = document.querySelectorAll('.langs button');
+  for (var i = 0; i < bs.length; i++) bs[i].onclick = function () { set(this.getAttribute('data-l'), true); };
+  set(cur, false);
+})();
+</script>
 </body>
 </html>
