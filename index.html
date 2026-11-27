@@ -108,11 +108,8 @@
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' }
-      ],
-      iceCandidatePoolSize: 4
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
     }
   };
 
@@ -525,13 +522,13 @@
           mode
         });
       }
-    }, 5000);
+    }, 8000);
 
     setInterval(() => {
       if (st === 'menu' || st === 'online') {
         syncFirebaseLobby();
       }
-    }, 1000);
+    }, 1800);
 
     window.addEventListener('beforeunload', () => {
       if (netRole === 'host' && roomCode) {
@@ -769,123 +766,94 @@
     }
   }
 
+  // Renvoie :
+  //   true  = paquet accepté
+  //   false = paquet invalide / malveillant (compte comme avertissement, 3 = exclusion)
+  //   null  = paquet ignoré SANS sanction (arrivé en retard ou dans le désordre :
+  //           le canal PeerJS n'est pas ordonné par défaut, ça arrive à des joueurs honnêtes)
   function validateNetPacket(d, senderPeerId = null) {
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return false;
 
     if (netRole === 'host' && senderPeerId) {
+      // Un invité ne peut envoyer QUE ces types. start / lobby_state / full / kicked
+      // sont réservés au host (sinon un invité pourrait fermer la salle de tout le monde).
+      if (!['hello', 'rematch', 'aim', 'launch', 'roll_sync', 'throw_res'].includes(d.type)) return false;
+
       const slotEntry = roomRoster.find(r => r.peerId === senderPeerId);
-      if (!slotEntry) return false;
-      const senderSlot = slotEntry.slot;
+      if (!slotEntry) return null;
 
       if (d.type === 'hello') {
-        return st === 'online' && onlineSub === 'hosting' && typeof d.nick === 'string';
-      }
-      if (['aim', 'launch', 'roll_sync', 'throw_res'].includes(d.type)) {
-        if (senderSlot !== cp || isBotTurn()) return false;
+        return (st === 'online' && onlineSub === 'hosting' && typeof d.nick === 'string') ? true : null;
       }
       if (d.type === 'rematch') {
-        return false;
+        return st === 'over' ? true : null;
       }
+      // ce n'est pas son tour (ou tour d'un bot) : on ignore
+      if (slotEntry.slot !== cp || isBotTurn()) return null;
     }
 
     if (d.type === 'aim') {
-      if (st !== 'aim') return false;
       if (!Number.isFinite(d.px) || !Number.isFinite(d.aimA) || !Number.isFinite(d.power)) return false;
       if (d.px < LL + BR || d.px > LR - BR) return false;
       if (Math.abs(d.aimA) > 0.45) return false;
       if (d.power < 0 || d.power > 1.02) return false;
       if (d.aimLock !== 0 && d.aimLock !== 1) return false;
-      return true;
+      return st === 'aim' ? true : null;
     }
 
     if (d.type === 'launch') {
-      if (st !== 'aim' || netSec.turnLaunchSeen) return false;
       if (!Number.isFinite(d.px) || !Number.isFinite(d.vx) || !Number.isFinite(d.vy)) return false;
       if (!Number.isFinite(d.aimA) || !Number.isFinite(d.power)) return false;
       if (d.px < LL + BR || d.px > LR - BR) return false;
       if (Math.abs(d.aimA) > 0.45) return false;
       if (d.power < 0 || d.power > 1.01) return false;
-
       const expectedSpeed = 7.2 + clamp(d.power, 0, 1) * 9.2;
       const actualSpeed = Math.hypot(d.vx, d.vy);
-      if (Math.abs(actualSpeed - expectedSpeed) > 0.45 || d.vy >= -5.2) return false;
+      if (Math.abs(actualSpeed - expectedSpeed) > 0.35 || d.vy >= -5.5) return false;
       if (Math.abs(d.spin || 0) > 1.05) return false;
-      return true;
+      return (st === 'aim' && !netSec.turnLaunchSeen) ? true : null;
     }
 
     if (d.type === 'roll_sync') {
-      if (st !== 'roll' || !netSec.turnLaunchSeen) return false;
+      if (st !== 'roll' || !netSec.turnLaunchSeen) return null;
       if (!Number.isFinite(d.bx) || !Number.isFinite(d.by) || !Number.isFinite(d.vx) || !Number.isFinite(d.vy)) return false;
-      if (d.bx < 20 || d.bx > 460 || d.by < 0 || d.by > 760) return false;
-      if (Math.hypot(d.vx, d.vy) > 19.5) return false;
-      if (Math.abs(d.spin || 0) > 1.05) return false;
+      // roll_sync ne sert qu'à recaler la boule : une valeur hors limites est simplement ignorée
+      if (d.bx < 20 || d.bx > 460 || d.by < 0 || d.by > 760) return null;
+      if (Math.hypot(d.vx, d.vy) > 19.5) return null;
+      if (Math.abs(d.spin || 0) > 1.05) return null;
       return true;
     }
 
     if (d.type === 'throw_res') {
-      if ((st !== 'roll' && st !== 'between') || netSec.turnResSeen) return false;
-      if (!Array.isArray(d.pins) || d.pins.length !== pins.length) return false;
-
-      let newDownCount = 0;
-      for (let i = 0; i < pins.length; i++) {
-        const cur = pins[i];
-        const inc = d.pins[i];
-        if (!inc || typeof inc !== 'object') return false;
-        const incDown = !!inc.down;
-        const incGone = !!inc.gone;
-        if (cur.gone && !incGone) return false;
-        if (cur.down && !incDown && !incGone) return false;
-        if (incDown && !cur.gone) newDownCount++;
+      if (!Array.isArray(d.pins) || d.pins.length > 20) return false;
+      for (let i = 0; i < d.pins.length; i++) {
+        if (!d.pins[i] || typeof d.pins[i] !== 'object') return false;
       }
-      if (newDownCount > sb || newDownCount < 0 || newDownCount > 10) return false;
-      if (d.gutter && newDownCount > 0) return false;
-      return true;
+      if (pins.length && d.pins.length !== pins.length) return false;
+      // NB : on ne compare PAS avec l'état local des quilles : chaque client simule la
+      // boule de son côté, donc l'état local peut légitimement différer du résultat du lanceur.
+      return ((st === 'roll' || st === 'between') && !netSec.turnResSeen) ? true : null;
     }
 
     return ['full', 'kicked', 'lobby_state', 'start', 'rematch'].includes(d.type);
   }
 
+  // Reconstruit un message propre (champs connus uniquement) avant de le relayer aux autres joueurs
   function cleanGameMsg(d) {
-    if (!d || typeof d !== 'object') return d;
-    if (d.type === 'aim') {
-      return {
-        type: 'aim',
-        px: clamp(Number(d.px) || 240, LL + BR + 4, LR - BR - 4),
-        aimLock: d.aimLock ? 1 : 0,
-        aimA: clamp(Number(d.aimA) || 0, -0.42, 0.42),
-        power: clamp(Number(d.power) || 0, 0, 1)
-      };
+    switch (d.type) {
+      case 'aim':
+        return { type: 'aim', px: d.px, aimLock: d.aimLock, aimA: d.aimA, power: d.power };
+      case 'launch':
+        return { type: 'launch', px: d.px, vx: d.vx, vy: d.vy, spin: Number(d.spin) || 0, aimA: d.aimA, power: d.power, perfect: !!d.perfect };
+      case 'roll_sync':
+        return { type: 'roll_sync', bx: d.bx, by: d.by, vx: d.vx, vy: d.vy, spin: Number(d.spin) || 0 };
+      case 'throw_res':
+        return { type: 'throw_res', gutter: !!d.gutter, pins: d.pins.map(q => ({ down: !!q.down, gone: !!q.gone })) };
+      case 'rematch':
+        return { type: 'rematch' };
+      default:
+        return d;
     }
-    if (d.type === 'launch') {
-      return {
-        type: 'launch',
-        px: clamp(Number(d.px) || 240, LL + BR + 4, LR - BR - 4),
-        vx: Number(d.vx) || 0,
-        vy: Number(d.vy) || -8,
-        spin: clamp(Number(d.spin) || 0, -1, 1),
-        aimA: clamp(Number(d.aimA) || 0, -0.42, 0.42),
-        power: clamp(Number(d.power) || 0, 0, 1),
-        perfect: !!d.perfect
-      };
-    }
-    if (d.type === 'roll_sync') {
-      return {
-        type: 'roll_sync',
-        bx: clamp(Number(d.bx) || 240, LL - 24, LR + 24),
-        by: clamp(Number(d.by) || 400, 20, 745),
-        vx: clamp(Number(d.vx) || 0, -18, 18),
-        vy: clamp(Number(d.vy) || -8, -18, 4),
-        spin: clamp(Number(d.spin) || 0, -1, 1)
-      };
-    }
-    if (d.type === 'throw_res') {
-      return {
-        type: 'throw_res',
-        gutter: !!d.gutter,
-        pins: Array.isArray(d.pins) ? d.pins.map(p => ({ down: !!p.down, gone: !!p.gone })) : []
-      };
-    }
-    return d;
   }
 
   function netBroadcastFromHost(data, excludeConn = null) {
@@ -947,7 +915,7 @@
     roomRoster.forEach((p, idx) => { p.slot = idx; });
     netBroadcastFromHost({
       type: 'lobby_state',
-      roster: roomRoster.map(r => ({ nick: r.nick, slot: r.slot, isBot: !!r.isBot, peerId: r.peerId, skin: Number.isInteger(r.skin) ? r.skin : 0 })),
+      roster: roomRoster.map(r => ({ nick: r.nick, slot: r.slot, isBot: !!r.isBot, peerId: r.peerId })),
       max: onlineCapacity,
       mode
     });
@@ -981,15 +949,14 @@
         nick: 'BOT ' + roomRoster.length,
         slot: roomRoster.length,
         isBot: true,
-        peerId: null,
-        skin: (roomRoster.length * 3) % SKINS.length
+        peerId: null
       });
     }
     roomRoster.forEach((p, idx) => { p.slot = idx; });
     netBroadcastFromHost({
       type: 'start',
       mode,
-      roster: roomRoster.map(r => ({ nick: r.nick, slot: r.slot, isBot: !!r.isBot, peerId: r.peerId, skin: Number.isInteger(r.skin) ? r.skin : 0 }))
+      roster: roomRoster.map(r => ({ nick: r.nick, slot: r.slot, isBot: !!r.isBot, peerId: r.peerId }))
     });
     startGame(true);
   }
@@ -1002,7 +969,7 @@
       }
       hostConns.push(c);
       const slotIdx = roomRoster.length;
-      roomRoster.push({ nick: 'JOUEUR ' + (slotIdx + 1), slot: slotIdx, isBot: false, peerId: c.peer, skin: 0 });
+      roomRoster.push({ nick: 'JOUEUR ' + (slotIdx + 1), slot: slotIdx, isBot: false, peerId: c.peer });
       arp([523.25, 659.25], 55);
       haptic(20);
       syncLobbyRoster();
@@ -1025,11 +992,8 @@
 
       if (d.type === 'hello') {
         const item = roomRoster.find(r => r.peerId === c.peer);
-        if (item) {
-          if (d.nick) item.nick = sanitizeNick(String(d.nick).slice(0, 64), 'JOUEUR');
-          if (Number.isInteger(d.skin) && d.skin >= 0 && d.skin < SKINS.length) {
-            item.skin = d.skin;
-          }
+        if (item && d.nick) {
+          item.nick = sanitizeNick(String(d.nick).slice(0, 64), 'JOUEUR');
           syncLobbyRoster();
         }
       } else {
@@ -1061,26 +1025,14 @@
 
   function setupGuestConn(connection) {
     guestConn = connection;
-    const connTimeout = setTimeout(() => {
-      if (playType === 'online' && st === 'online' && (!guestConn || !guestConn.open)) {
-        netStatus = 'DELAI DEPASSE - REESSAIE';
-        tone(150, 0.2, 'sawtooth');
-      }
-    }, 6500);
-
     guestConn.on('open', () => {
-      clearTimeout(connTimeout);
       netStatus = 'CONNECTE AU SALON !';
       arp([523.25, 659.25, 783.99], 60);
       haptic([20, 40, 20]);
-      netSend({ type: 'hello', nick: myNick, skin: stats.skin });
+      netSend({ type: 'hello', nick: myNick });
     });
-    guestConn.on('data', d => {
-      if (netRole === 'guest' && !validateNetPacket(d)) return;
-      handleNetData(d);
-    });
+    guestConn.on('data', d => handleNetData(d));
     guestConn.on('close', () => {
-      clearTimeout(connTimeout);
       if (playType === 'online' && st !== 'menu' && st !== 'over') {
         say('HOTE DECONNECTE', '#f35', 140, 'RETOUR AU MENU');
         if (!disconnectReturnTimer) {
@@ -1094,7 +1046,6 @@
       netStatus = 'CONNEXION FERMEE';
     });
     guestConn.on('error', () => {
-      clearTimeout(connTimeout);
       netStatus = 'SALON INTROUVABLE';
     });
   }
@@ -1190,7 +1141,8 @@
         }
       }
     } else if (d.type === 'rematch') {
-      if (netRole === 'guest') {
+      // invité : le host a lancé la revanche ; host : un invité la propose (déjà vérifié sur l'écran de fin)
+      if (netRole === 'guest' || st === 'over') {
         startGame(true);
       }
     }
@@ -1210,7 +1162,7 @@
     if (onlineCapacity === 1) {
       netRole = 'host';
       mySlot = 0;
-      roomRoster = [{ nick: myNick, slot: 0, isBot: false, peerId: null, skin: stats.skin }];
+      roomRoster = [{ nick: myNick, slot: 0, isBot: false, peerId: null }];
       startGame(true);
       return;
     }
@@ -1222,7 +1174,7 @@
     mySlot = 0;
     onlineSub = 'hosting';
     roomCode = genCode();
-    roomRoster = [{ nick: myNick, slot: 0, isBot: false, peerId: null, skin: stats.skin }];
+    roomRoster = [{ nick: myNick, slot: 0, isBot: false, peerId: null }];
     netStatus = 'CREATION DU SALON...';
 
     publishRoomToFirebase({
@@ -1984,9 +1936,9 @@
         ball.rot += Math.hypot(ball.vx, ball.vy) * 0.045;
       }
 
-      if (playType === 'online' && isMyNetTurn()) {
+      if (playType === 'online' && isMyNetTurn() && ball.rolling) {
         netSyncTimer++;
-        if (netSyncTimer % 2 === 0) {
+        if (netSyncTimer % 3 === 0) {
           netSend({
             type: 'roll_sync',
             bx: ball.x,
@@ -2084,7 +2036,7 @@
     }
 
     if (ball && ball.rolling) {
-      const sk = getActiveBallSkin();
+      const sk = SKINS[stats.skin] || SKINS[0];
       const stepMod = isTouchDevice ? 3 : 2;
       if (tk % stepMod === 0) {
         trails.push({ x: ball.x, y: ball.y, r: ball.r, l: 11, c: gutter ? '#f35' : sk.trail });
@@ -3077,7 +3029,7 @@
 
   function drawBall() {
     if (!ball || !isFinite(ball.x) || !isFinite(ball.y) || ball.x < 0) return;
-    const sk = getActiveBallSkin();
+    const sk = SKINS[stats.skin] || SKINS[0];
 
     for (let i = 0; i < trails.length; i++) {
       const tr = trails[i];
@@ -3194,41 +3146,30 @@
     return short ? 'J' + (idx + 1) : 'JOUEUR ' + (idx + 1);
   }
 
-  function getActiveBallSkin() {
-    if (playType === 'online') {
-      if (cp === mySlot) {
-        return SKINS[stats.skin] || SKINS[0];
-      }
-      const entry = roomRoster[cp];
-      if (entry && Number.isInteger(entry.skin) && SKINS[entry.skin]) {
-        return SKINS[entry.skin];
-      }
-    }
-    return SKINS[stats.skin] || SKINS[0];
-  }
-
   function drawBoard() {
-    const V = FIN ? Math.min(NF, 5) : 5;
-    const s0 = FIN ? (NF > 5 && fi >= 5 ? 5 : 0) : Math.max(0, fi - 4);
-    const cw = (W - 76) / V;
+    if (!PL.length) return;
     const boardH = np > 2 ? 96 : 90;
-
     g.fillStyle = '#0b0428';
     g.fillRect(0, 0, W, boardH);
+    const V = FIN ? NF : 6;
+    const cw = 400 / V;
+    const s0 = FIN ? 0 : Math.max(0, fi - V + 2);
 
     if (np > 2) {
-      const tabW = (W - 12) / np;
+      const slotW = (W - 8) / np;
       for (let i = 0; i < np; i++) {
-        const plItem = PL[i] || PL[0];
+        const p = PL[i];
+        const a = calc(p);
         const on = i === cp;
         const col = PLAYER_COLORS[i % PLAYER_COLORS.length];
-        const tx = 6 + i * tabW;
-        g.fillStyle = on ? '#ffffff26' : '#ffffff08';
-        g.fillRect(tx + 1, 4, tabW - 2, 24);
+        const sx = 4 + i * slotW;
+        g.fillStyle = on ? col + '30' : '#ffffff0a';
+        g.fillRect(sx + 2, 4, slotW - 4, 24);
         g.strokeStyle = on ? '#ff0' : col + '77';
         g.lineWidth = on ? 2 : 1;
-        g.strokeRect(tx + 1, 4, tabW - 2, 24);
-        txt(playerLabel(i, true) + ':' + total(plItem), tx + tabW / 2, 20, 6.5, on ? '#ff0' : col, 'center', false);
+        g.strokeRect(sx + 2, 4, slotW - 4, 24);
+        txt(playerLabel(i, true), sx + 6, 15, 6.2, on ? '#ff0' : col, 'left', false);
+        txt(String(a.tot + p.bonus), sx + slotW - 6, 23, 7, '#fff', 'right', false);
       }
 
       const p = PL[cp] || PL[0];
