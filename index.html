@@ -1558,6 +1558,14 @@
     }
   }
 
+  // Clic / tap sur le canvas : dans le menu, l'écran de fin et les records, SEULS les boutons
+  // réagissent (un clic à côté ne lance plus de partie). En jeu, un tap reste une action
+  // (position / angle / lancer). Le clavier (Espace / Entrée) continue d'appeler action().
+  function pointerAction() {
+    if (st === 'menu' || st === 'over' || st === 'stats') return;
+    action();
+  }
+
   function launch() {
     if (!ball) return;
     const s = 7.2 + power * 9.2;
@@ -4127,7 +4135,7 @@
 
     if (e.pointerType === 'mouse' && !(st === 'menu' && ballMenuOpen)) {
       ptr(true);
-      action();
+      pointerAction();
     } else if (st !== 'menu') {
       ptr(false);
     }
@@ -4175,7 +4183,7 @@
         }
       }
       if (!moved) {
-        action();
+        pointerAction();
       }
     }
     swipeMode = false;
