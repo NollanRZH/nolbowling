@@ -177,6 +177,7 @@
     { id: 'ice', name: 'CRYO FROST', label: 'CRYO', c1: '#ffffff', c2: '#48cae4', c3: '#023e8a', glow: '#90e0ef', trail: '#48cae4', req: 2 },
     { id: 'ylazia', name: 'YLAZIA', label: 'YLAZIA', c1: '#ff66dd', c2: '#7a0bc0', c3: '#090114', glow: '#ff22bb', trail: '#e0119d', req: 0 },
     { id: 'coralens', name: 'CORALENS', label: 'CORALENS', c1: '#ffd1a3', c2: '#ff7b29', c3: '#7a2500', glow: '#ff8c42', trail: '#ff7b29', req: 0 },
+    { id: 'oathnet', name: 'OATHNET', label: 'OATHNET', c1: '#ffffff', c2: '#5d34d9', c3: '#1d1c29', glow: '#7b4dff', trail: '#7b4dff', req: 0 },
     { id: 'france', name: 'FRANCE', label: 'FRANCE', c1: '#ffffff', c2: '#0055a4', c3: '#ef4135', glow: '#4da6ff', trail: '#ffffff', req: 0 },
     { id: 'mexique', name: 'MEXIQUE', label: 'MEXIQUE', c1: '#ffffff', c2: '#006847', c3: '#ce1126', glow: '#00d97e', trail: '#ff4444', req: 0 },
     { id: 'pologne', name: 'POLOGNE', label: 'POLOGNE', c1: '#ffffff', c2: '#dc143c', c3: '#8b001e', glow: '#ff4d6d', trail: '#ff4d6d', req: 0 },
@@ -2509,7 +2510,134 @@
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.clip();
 
-    if (type === 'coralens') {
+    if (type === 'oathnet') {
+      // Fond sombre violet / ardoise
+      const bgGr = ctx.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r);
+      bgGr.addColorStop(0, locked ? '#555555' : '#312352');
+      bgGr.addColorStop(0.6, locked ? '#2c2c2c' : '#181426');
+      bgGr.addColorStop(1, locked ? '#141414' : '#0b0914');
+      ctx.fillStyle = bgGr;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
+
+      const darkOutline = locked ? '#1f1f1f' : '#1d1c29';
+      const whiteSide = locked ? '#a8a8a8' : '#ffffff';
+      const sw = r * 0.68;
+      const sh = r * 0.78;
+
+      function shieldPath() {
+        ctx.beginPath();
+        ctx.moveTo(0, -sh);
+        ctx.lineTo(sw, -sh * 0.56);
+        ctx.lineTo(sw, sh * 0.14);
+        ctx.quadraticCurveTo(sw * 0.94, sh * 0.66, 0, sh);
+        ctx.quadraticCurveTo(-sw * 0.94, sh * 0.66, -sw, sh * 0.14);
+        ctx.lineTo(-sw, -sh * 0.56);
+        ctx.closePath();
+      }
+
+      // Halo violet discret derrière le bouclier
+      if (!locked) {
+        ctx.save();
+        ctx.shadowColor = '#7b4dff';
+        ctx.shadowBlur = 14;
+        shieldPath();
+        ctx.fillStyle = darkOutline;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.save();
+      shieldPath();
+      ctx.clip();
+
+      // Moitié droite blanche
+      ctx.fillStyle = whiteSide;
+      ctx.fillRect(-sw, -sh, sw * 2, sh * 2);
+
+      // Moitié gauche violette avec pointe centrale vers la droite
+      const purpGr = ctx.createLinearGradient(-sw, -sh, 0, sh);
+      purpGr.addColorStop(0, locked ? '#6e6e6e' : '#653ae6');
+      purpGr.addColorStop(0.55, locked ? '#4d4d4d' : '#4a23b8');
+      purpGr.addColorStop(1, locked ? '#323232' : '#321485');
+      ctx.fillStyle = purpGr;
+      ctx.beginPath();
+      ctx.moveTo(-sw, -sh);
+      ctx.lineTo(0, -sh);
+      ctx.lineTo(0, -sh * 0.16);
+      ctx.lineTo(sw * 0.18, 0);
+      ctx.lineTo(0, sh * 0.16);
+      ctx.lineTo(0, sh);
+      ctx.lineTo(-sw, sh);
+      ctx.closePath();
+      ctx.fill();
+
+      // Ligne centrale sombre brisée entre le violet et le blanc
+      ctx.strokeStyle = darkOutline;
+      ctx.lineWidth = r * 0.085;
+      ctx.lineJoin = 'miter';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, -sh);
+      ctx.lineTo(0, -sh * 0.16);
+      ctx.lineTo(sw * 0.18, 0);
+      ctx.lineTo(0, sh * 0.16);
+      ctx.lineTo(0, sh);
+      ctx.stroke();
+
+      // 3 pistes de circuit imprimé à gauche (avec cercles)
+      const nodes = [
+        { y: -sh * 0.25, nx: -sw * 0.36 },
+        { y: 0, nx: -sw * 0.28 },
+        { y: sh * 0.25, nx: -sw * 0.36 }
+      ];
+      const nodeR = r * 0.075;
+      nodes.forEach(n => {
+        ctx.strokeStyle = darkOutline;
+        ctx.lineWidth = r * 0.07;
+        ctx.beginPath();
+        ctx.moveTo(-sw, n.y);
+        ctx.lineTo(n.nx - nodeR * 0.85, n.y);
+        ctx.stroke();
+
+        ctx.fillStyle = locked ? '#585858' : '#572fd1';
+        ctx.beginPath();
+        ctx.arc(n.nx, n.y, nodeR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = r * 0.062;
+        ctx.stroke();
+      });
+
+      // Fissures / éclairs sombres sur la partie droite blanche
+      ctx.strokeStyle = darkOutline;
+      ctx.lineWidth = r * 0.072;
+      ctx.lineJoin = 'miter';
+      ctx.lineCap = 'round';
+
+      // Fissure haute
+      ctx.beginPath();
+      ctx.moveTo(sw * 0.56, -sh * 0.65);
+      ctx.lineTo(sw * 0.28, -sh * 0.34);
+      ctx.lineTo(sw * 0.25, -sh * 0.20);
+      ctx.stroke();
+
+      // Fissure principale diagonale à droite
+      ctx.beginPath();
+      ctx.moveTo(sw, -sh * 0.10);
+      ctx.lineTo(sw * 0.52, -sh * 0.08);
+      ctx.lineTo(sw * 0.42, sh * 0.05);
+      ctx.lineTo(sw * 0.22, sh * 0.07);
+      ctx.lineTo(sw * 0.14, sh * 0.26);
+      ctx.stroke();
+
+      ctx.restore();
+
+      // Contour extérieur épais du bouclier
+      shieldPath();
+      ctx.strokeStyle = darkOutline;
+      ctx.lineWidth = r * 0.095;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    } else if (type === 'coralens') {
       const cGr = ctx.createRadialGradient(-r * 0.28, -r * 0.32, r * 0.08, 0, 0, r);
       cGr.addColorStop(0, locked ? '#888888' : '#ffb870');
       cGr.addColorStop(0.5, locked ? '#555555' : '#ff6f1e');
@@ -2862,7 +2990,7 @@
       drawYlaziaSurface(cx, cy, r, rotAngle, locked);
       return;
     }
-    if (['coralens', 'nebula', 'lava', 'ice', 'france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].includes(sk.id)) {
+    if (['oathnet', 'coralens', 'nebula', 'lava', 'ice', 'france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].includes(sk.id)) {
       drawSpecialBallSurface(cx, cy, r, rotAngle, sk.id, locked);
       return;
     }
@@ -2911,7 +3039,7 @@
       return;
     }
 
-    if (['coralens', 'nebula', 'lava', 'ice', 'france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].includes(sk.id)) {
+    if (['oathnet', 'coralens', 'nebula', 'lava', 'ice', 'france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].includes(sk.id)) {
       drawSpecialBallSurface(x, y - r * 0.3, r, ball.rot * 0.45 + ball.spin * 0.5, sk.id, false);
       return;
     }
@@ -4019,7 +4147,7 @@
   });
 
   buildStaticLaneCache();
-  ['coralens', 'nebula', 'lava', 'ice', 'france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].forEach(t => {
+  ['oathnet', 'coralens', 'nebula', 'lava', 'ice', 'france', 'mexique', 'pologne', 'bretagne', 'rennes', 'nc'].forEach(t => {
     getSpecialBallSprite(t, false);
   });
 
