@@ -1488,7 +1488,125 @@
 
   const spd = () => (FIN ? 1 : Math.min(1.95, 1 + (level - 1) * 0.08));
 
+  /* ==========================================================================
+     LANGUES : FR (source) / EN / ES (espagnol mexicain). Les textes du jeu sont ecrits en
+     francais ; tr() les traduit a l'affichage. Pour ajouter un texte : une ligne dans EN et ES.
+     ========================================================================== */
+  const LANGS = ['fr', 'en', 'es'];
+  const LANG_TAG = { fr: 'FR', en: 'EN', es: 'MX' };
+  let LANG = 'fr';
+  try {
+    const sv = localStorage.getItem('nb_lang');
+    if (LANGS.includes(sv)) LANG = sv;
+    else {
+      const nl = (navigator.language || 'fr').toLowerCase();
+      LANG = nl.startsWith('es') ? 'es' : nl.startsWith('en') ? 'en' : 'fr';
+    }
+  } catch (e) {}
+
+  const I18N = {
+    en: {
+      '* NOUVEAU RECORD PERSONNEL ! *': '* NEW PERSONAL BEST! *', 'A TOI DE JOUER !': 'YOUR TURN!',
+      'ACTUALISER': 'REFRESH', 'ADVERSAIRE': 'OPPONENT', 'ANALYSE DE LA PISTE EN COURS': 'ANALYZING THE LANE',
+      'ARCADE EDITION': 'ARCADE EDITION', 'AUCUN SALON PUBLIC POUR L INSTANT': 'NO PUBLIC ROOMS YET',
+      'BLOQUE': 'LOCKED', 'BOWLING': 'BOWLING', 'BOULES (': 'BALLS (', 'CARRIERE ARCADE': 'ARCADE CAREER',
+      'CHOISIS UN SALON OU CREE LE TIEN': 'PICK A ROOM OR CREATE YOUR OWN', 'CODE INVALIDE (4 CAR.)': 'INVALID CODE (4 CHARS)',
+      'CODE SALON : ': 'ROOM CODE: ', 'CONNECTE AU SALON !': 'CONNECTED TO ROOM!', 'CONNECTER': 'CONNECT',
+      'CONNEXION A ': 'CONNECTING TO ', 'CONNEXION FERMEE': 'CONNECTION CLOSED', 'CREATION DU SALON...': 'CREATING ROOM...',
+      'CREE UN SALON CI-DESSUS POUR ETRE': 'CREATE A ROOM ABOVE TO BE', 'CREER UN SALON (': 'CREATE A ROOM (',
+      'DEBLOQUE DES BOULES EN FAISANT DES STRIKES !': 'UNLOCK BALLS BY BOWLING STRIKES!',
+      'DELAI DEPASSE - REESSAIE': 'TIMED OUT - TRY AGAIN', 'DEMARRAGE AUTO DES QUE COMPLET !': 'AUTO-START WHEN FULL!',
+      'EN ATTENTE DES JOUEURS...': 'WAITING FOR PLAYERS...', 'EN ATTENTE...': 'WAITING...',
+      'ENTRE LE CODE A 4 LETTRES': 'ENTER THE 4-LETTER CODE', 'ERREUR : ': 'ERROR: ', 'EXCLUS : ': 'KICKED: ',
+      'HOTE DECONNECTE': 'HOST DISCONNECTED', 'JOUEUR ': 'PLAYER ', 'LANCER DE ': 'THROW BY ',
+      'LANCER DU BOT EN COURS...': 'BOT IS THROWING...', 'LANCER MAINTENANT': 'THROW NOW', 'MENTIONS LEGALES': 'LEGAL NOTICE',
+      'MENU': 'MENU', 'MENU PRINCIPAL': 'MAIN MENU', 'MODE DE JEU': 'GAME MODE', 'MULTIJOUEUR EN LIGNE': 'ONLINE MULTIPLAYER',
+      'NIVEAU ': 'LEVEL ', 'OBSERVE SON LANCER EN DIRECT': 'WATCH THEIR THROW LIVE',
+      'PASSE L APPAREIL AU JOUEUR ': 'PASS THE DEVICE TO PLAYER ', 'PEERJS INDISPONIBLE': 'PEERJS UNAVAILABLE',
+      'POCHE 1-3 + EFFET POUR UN VRAI STRIKE': 'AIM THE 1-3 POCKET + SPIN FOR A REAL STRIKE', 'PREPARE TOI...': 'GET READY...',
+      'PRET': 'READY', 'PRET A CONNECTER': 'READY TO CONNECT', 'PUISSANCE PARFAITE': 'PERFECT POWER',
+      'RECORD INFINI : ': 'ENDLESS RECORD: ', 'RECORDS': 'RECORDS', 'REJOINDRE': 'JOIN', 'REJOINDRE AVEC UN CODE': 'JOIN WITH A CODE',
+      'REJOINS UN SALON DISPO OU CREE LE TIEN': 'JOIN AN OPEN ROOM OR CREATE YOUR OWN', 'REJOUER': 'PLAY AGAIN',
+      'RESEAU BLOQUE': 'NETWORK BLOCKED', 'RETOUR MENU': 'BACK TO MENU', 'SAISIS LE CODE DU SALON :': 'ENTER THE ROOM CODE:',
+      'SALON DEJA COMPLET !': 'ROOM ALREADY FULL!', 'SALON INTROUVABLE': 'ROOM NOT FOUND',
+      'SALONS EN LIGNE': 'ONLINE ROOMS', 'SALONS PUBLICS OU PRIVES • 1 A 4 JOUEURS': 'PUBLIC OR PRIVATE ROOMS • 1 TO 4 PLAYERS',
+      'SELECTIONNER BOULE': 'SELECT BALL', 'JOUER': 'PLAY', 'SPARE !': 'SPARE!', 'STATISTIQUES': 'STATISTICS',
+      'TON PSEUDO :': 'YOUR NICKNAME:', 'TOUCHE OU ESPACE POUR LANCER': 'TAP OR PRESS SPACE TO THROW',
+      'TOUR A TOUR SUR LE MEME ECRAN (': 'TAKE TURNS ON THE SAME SCREEN (', 'TOUR DE ': 'TURN OF ', 'TOUR DU BOT (': 'BOT TURN (',
+      'UN JOUEUR A QUITTE': 'A PLAYER LEFT', 'VISIBLE PAR LES AUTRES JOUEURS !': 'VISIBLE TO OTHER PLAYERS!',
+      'RETOUR MENU ': 'BACK TO MENU ', 'SON : ON': 'SOUND: ON', 'SON : OFF': 'SOUND: OFF',
+      'TAP POUR EQUIPER': 'TAP TO EQUIP', 'BOULE SELECTIONNEE': 'BALL SELECTED', 'DEBLOQUE A ': 'UNLOCKED AT ',
+      'CLIC / TAP : LANCER': 'CLICK / TAP: THROW', 'GLISSE : POSITION • TAP : ANGLE': 'SWIPE: POSITION • TAP: ANGLE',
+      'COPIER LE SCORE': 'COPY SCORE', 'SCORE COPIE !': 'SCORE COPIED!', 'EGALITE PARFAITE !': 'PERFECT TIE!',
+      'TON PSEUDO': 'YOUR NICKNAME', ' GAGNE !': ' WINS!'
+    },
+    es: {
+      '* NOUVEAU RECORD PERSONNEL ! *': '* NUEVO RECORD PERSONAL! *', 'A TOI DE JOUER !': 'TE TOCA!',
+      'ACTUALISER': 'ACTUALIZAR', 'ADVERSAIRE': 'RIVAL', 'ANALYSE DE LA PISTE EN COURS': 'ANALIZANDO LA PISTA',
+      'ARCADE EDITION': 'EDICION ARCADE', 'AUCUN SALON PUBLIC POUR L INSTANT': 'AUN NO HAY SALAS PUBLICAS',
+      'BLOQUE': 'BLOQUEADA', 'BOWLING': 'BOLICHE', 'BOULES (': 'BOLAS (', 'CARRIERE ARCADE': 'CARRERA ARCADE',
+      'CHOISIS UN SALON OU CREE LE TIEN': 'ELIGE UNA SALA O CREA LA TUYA', 'CODE INVALIDE (4 CAR.)': 'CODIGO INVALIDO (4 CAR.)',
+      'CODE SALON : ': 'CODIGO DE SALA: ', 'CONNECTE AU SALON !': 'CONECTADO A LA SALA!', 'CONNECTER': 'CONECTAR',
+      'CONNEXION A ': 'CONECTANDO A ', 'CONNEXION FERMEE': 'CONEXION CERRADA', 'CREATION DU SALON...': 'CREANDO SALA...',
+      'CREE UN SALON CI-DESSUS POUR ETRE': 'CREA UNA SALA ARRIBA PARA SER', 'CREER UN SALON (': 'CREAR UNA SALA (',
+      'DEBLOQUE DES BOULES EN FAISANT DES STRIKES !': 'DESBLOQUEA BOLAS HACIENDO STRIKES!',
+      'DELAI DEPASSE - REESSAIE': 'TIEMPO AGOTADO - REINTENTA', 'DEMARRAGE AUTO DES QUE COMPLET !': 'INICIO AUTOMATICO AL LLENARSE!',
+      'EN ATTENTE DES JOUEURS...': 'ESPERANDO JUGADORES...', 'EN ATTENTE...': 'ESPERANDO...',
+      'ENTRE LE CODE A 4 LETTRES': 'ESCRIBE EL CODIGO DE 4 LETRAS', 'ERREUR : ': 'ERROR: ', 'EXCLUS : ': 'EXPULSADO: ',
+      'HOTE DECONNECTE': 'ANFITRION DESCONECTADO', 'JOUEUR ': 'JUGADOR ', 'LANCER DE ': 'TIRO DE ',
+      'LANCER DU BOT EN COURS...': 'EL BOT ESTA TIRANDO...', 'LANCER MAINTENANT': 'TIRAR AHORA', 'MENTIONS LEGALES': 'AVISO LEGAL',
+      'MENU': 'MENU', 'MENU PRINCIPAL': 'MENU PRINCIPAL', 'MODE DE JEU': 'MODO DE JUEGO', 'MULTIJOUEUR EN LIGNE': 'MULTIJUGADOR EN LINEA',
+      'NIVEAU ': 'NIVEL ', 'OBSERVE SON LANCER EN DIRECT': 'MIRA SU TIRO EN VIVO',
+      'PASSE L APPAREIL AU JOUEUR ': 'PASA EL DISPOSITIVO AL JUGADOR ', 'PEERJS INDISPONIBLE': 'PEERJS NO DISPONIBLE',
+      'POCHE 1-3 + EFFET POUR UN VRAI STRIKE': 'APUNTA A LA BOLSA 1-3 + EFECTO PARA UN STRIKE', 'PREPARE TOI...': 'PREPARATE...',
+      'PRET': 'LISTO', 'PRET A CONNECTER': 'LISTO PARA CONECTAR', 'PUISSANCE PARFAITE': 'POTENCIA PERFECTA',
+      'RECORD INFINI : ': 'RECORD INFINITO: ', 'RECORDS': 'RECORDS', 'REJOINDRE': 'UNIRSE', 'REJOINDRE AVEC UN CODE': 'UNIRSE CON CODIGO',
+      'REJOINS UN SALON DISPO OU CREE LE TIEN': 'UNETE A UNA SALA O CREA LA TUYA', 'REJOUER': 'JUGAR OTRA VEZ',
+      'RESEAU BLOQUE': 'RED BLOQUEADA', 'RETOUR MENU': 'VOLVER AL MENU', 'SAISIS LE CODE DU SALON :': 'ESCRIBE EL CODIGO DE LA SALA:',
+      'SALON DEJA COMPLET !': 'LA SALA YA ESTA LLENA!', 'SALON INTROUVABLE': 'SALA NO ENCONTRADA',
+      'SALONS EN LIGNE': 'SALAS EN LINEA', 'SALONS PUBLICS OU PRIVES • 1 A 4 JOUEURS': 'SALAS PUBLICAS O PRIVADAS • 1 A 4 JUGADORES',
+      'SELECTIONNER BOULE': 'ELEGIR BOLA', 'JOUER': 'JUGAR', 'SPARE !': 'SPARE!', 'STATISTIQUES': 'ESTADISTICAS',
+      'TON PSEUDO :': 'TU APODO:', 'TOUCHE OU ESPACE POUR LANCER': 'TOCA O PRESIONA ESPACIO PARA TIRAR',
+      'TOUR A TOUR SUR LE MEME ECRAN (': 'POR TURNOS EN LA MISMA PANTALLA (', 'TOUR DE ': 'TURNO DE ', 'TOUR DU BOT (': 'TURNO DEL BOT (',
+      'UN JOUEUR A QUITTE': 'UN JUGADOR SE FUE', 'VISIBLE PAR LES AUTRES JOUEURS !': 'VISIBLE PARA LOS DEMAS JUGADORES!',
+      'SON : ON': 'SONIDO: SI', 'SON : OFF': 'SONIDO: NO', 'TAP POUR EQUIPER': 'TOCA PARA EQUIPAR',
+      'BOULE SELECTIONNEE': 'BOLA SELECCIONADA', 'DEBLOQUE A ': 'SE DESBLOQUEA CON ',
+      'CLIC / TAP : LANCER': 'CLIC / TOQUE: TIRAR', 'GLISSE : POSITION • TAP : ANGLE': 'DESLIZA: POSICION • TOCA: ANGULO',
+      'COPIER LE SCORE': 'COPIAR PUNTAJE', 'SCORE COPIE !': 'PUNTAJE COPIADO!', 'EGALITE PARFAITE !': 'EMPATE PERFECTO!',
+      'TON PSEUDO': 'TU APODO', ' GAGNE !': ' GANA!'
+    }
+  };
+
+  // traduit un texte francais : exact, puis par prefixe (ex. 'JOUEUR ' + numero)
+  function tr(str) {
+    if (LANG === 'fr' || typeof str !== 'string' || !str) return str;
+    const d = I18N[LANG];
+    if (d[str] !== undefined) return d[str];
+    for (const k in d) {
+      if (k.length > 2 && (k.endsWith(' ') || k.endsWith('(')) && str.startsWith(k)) return d[k] + str.slice(k.length);
+    }
+    if (d[' GAGNE !'] && str.endsWith(' GAGNE !')) return str.slice(0, -8) + d[' GAGNE !'];
+    return str;
+  }
+
+  function applyLangToDom() {
+    try {
+      document.documentElement.lang = LANG === 'es' ? 'es-MX' : LANG;
+      nickInputEl.placeholder = tr('TON PSEUDO');
+    } catch (e) {}
+  }
+
+  function setLang() {
+    LANG = LANGS[(LANGS.indexOf(LANG) + 1) % LANGS.length];
+    try { localStorage.setItem('nb_lang', LANG); } catch (e) {}
+    applyLangToDom();
+    tone(600, 0.06);
+  }
+
+  applyLangToDom();
+
   function say(m, c = '#ff0', t = 95, sub = '') {
+    m = tr(m); sub = tr(sub);
     msg = m;
     msgSub = sub;
     msgC = c;
@@ -2150,6 +2268,7 @@
   }
 
   function txt(s, x, y, size, col, al = 'center', glow = false, out = false) {
+    s = tr(s);
     g.font = size + 'px ' + FONT;
     g.textAlign = al;
     if (out) {
@@ -2190,6 +2309,7 @@
   }
 
   function btn(x, y, w, h, l, sel, fn, sz = 9, c = '#0ff', locked = false, noTapSelect = false) {
+    l = tr(l);
     hits.push({ x, y, w, h, fn, noTapSelect });
     const hv = mx >= x && mx <= x + w && my >= y && my <= y + h;
     g.fillStyle = locked ? '#ffffff08' : (sel ? c : (hv ? '#ffffff2c' : '#ffffff12'));
@@ -3667,6 +3787,8 @@
     drawSkinPreview(activeSkin, selBtnX + 30, selBtnY + selBtnH / 2, 15, false, Math.sin(tk * 0.05) * 0.12);
     txt('SELECTIONNER BOULE', selBtnX + 58, selBtnY + 21, 7.8, ballMenuOpen ? '#05010f' : '#0f8', 'left', false);
     txt(activeSkin.name + (ballMenuOpen ? ' ▲' : ' ▼'), selBtnX + 58, selBtnY + 40, 6.8, ballMenuOpen ? '#05010f' : '#fff', 'left', false);
+
+    btn(402, 12, 68, 26, LANG_TAG[LANG], false, () => { setLang(); }, 8, '#f0f');
 
     const mainLabel = playType === 'online' ? 'SALONS EN LIGNE' : 'JOUER';
     btn(90, 448, 300, 44, mainLabel, !ballMenuOpen && Math.floor(tk / 28) % 2 === 0, () => {
